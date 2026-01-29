@@ -1,0 +1,37 @@
+{
+  "name": "voice-dictation-mac",
+  "version": "1.0.0",
+  "description": "macOS voice dictation app using OpenAI Whisper",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac",
+    "pack": "electron-builder --mac --dir"
+  },
+  "author": "Moonsight",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "form-data": "^4.0.0",
+    "node-fetch": "^2.7.0",
+    "node-global-key-listener": "^0.3.0"
+  },
+  "build": {
+    "appId": "com.moonsight.voice-dictation",
+    "productName": "Voice Dictation",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.icns",
+      "target": ["dmg", "zip"],
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Voice Dictation needs microphone access to transcribe your speech."
+      }
+    }
+  }
+}
