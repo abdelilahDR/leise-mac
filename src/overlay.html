@@ -23,8 +23,9 @@
       flex-direction: column;
       align-items: center;
       gap: 4px;
-      cursor: pointer;
+      cursor: grab;
       user-select: none;
+      -webkit-app-region: drag;
     }
 
     .main-row {
@@ -98,6 +99,29 @@
 
     .success-text {
       font-size: 12px;
+      color: #aaa;
+      max-width: 320px;
+      text-align: center;
+      line-height: 1.5;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+    }
+
+    .copied-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(52, 199, 89, 0.2);
+      padding: 4px 10px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+    }
+
+    .copied-badge span {
+      font-size: 11px;
+      font-weight: 500;
       color: #34C759;
     }
 
@@ -132,7 +156,7 @@
         <span class="status">Recording</span>
         <span class="timer" id="timer">00:00</span>
       </div>
-      <div class="hint"><kbd>Ctrl+Space</kbd> to stop · <kbd>ESC</kbd> or click to cancel</div>
+      <div class="hint"><kbd>Ctrl+Space</kbd> to stop · <kbd>ESC</kbd> to cancel · drag to move</div>
     </div>
 
     <!-- Transcribing state -->
@@ -145,10 +169,11 @@
 
     <!-- Success state -->
     <div id="successState" class="hidden">
-      <div class="main-row">
+      <div class="copied-badge">
         <div class="dot green"></div>
-        <span class="success-text" id="successText">Done!</span>
+        <span>Copied to clipboard</span>
       </div>
+      <span class="success-text" id="successText"></span>
     </div>
 
     <!-- Error state -->
@@ -157,7 +182,7 @@
         <div class="dot red"></div>
         <span class="error-text" id="errorText">Error</span>
       </div>
-      <div class="hint"><kbd>ESC</kbd> to close</div>
+      <div class="hint"><kbd>ESC</kbd> to close · drag to move</div>
     </div>
   </div>
 
@@ -219,8 +244,9 @@
           break;
         case 'success':
           successState.classList.remove('hidden');
-          const text = data.text || 'Done!';
-          successText.textContent = text.length > 40 ? text.substring(0, 40) + '...' : text;
+          const text = data.text || '';
+          // Show up to 150 chars (fits ~3 lines) with quotes
+          successText.textContent = text.length > 150 ? '"' + text.substring(0, 150) + '..."' : '"' + text + '"';
           stopTimer();
           break;
         case 'error':

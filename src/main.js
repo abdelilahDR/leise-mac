@@ -29,7 +29,7 @@ function loadConfig() {
   } catch (err) {
     console.error('Failed to load config:', err);
   }
-  return { apiKey: '', shortcut: 'Control+Space' };
+  return { apiKey: '', groqApiKey: '', transcriptionProvider: 'openai', shortcut: 'Control+Space' };
 }
 
 function saveConfig(newConfig) {
@@ -81,10 +81,6 @@ function createTrayIcon(state) {
   // Handle both dev and packaged paths
   let iconPath = path.join(__dirname, 'icons', iconName);
 
-  // Log for debugging
-  console.log('Loading icon from:', iconPath);
-  console.log('App is packaged:', app.isPackaged);
-
   const image = nativeImage.createFromPath(iconPath);
 
   if (image.isEmpty()) {
@@ -109,27 +105,23 @@ function createRecorderWindow() {
     height: 1,
     show: false,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
     },
   });
 
   recorderWindow.loadFile(path.join(__dirname, 'recorder.html'));
 
   recorderWindow.webContents.on('did-finish-load', () => {
-    console.log('Recorder window loaded');
-    // Open DevTools for debugging (can be removed later)
-    // recorderWindow.webContents.openDevTools({ mode: 'detach' });
-    // Send API key to recorder
+    // Send API keys and provider to recorder
     if (config.apiKey) {
-      console.log('Sending API key to recorder');
       recorderWindow.webContents.send('set-api-key', config.apiKey);
     }
-  });
-
-  // Forward console logs from recorder window
-  recorderWindow.webContents.on('console-message', (event, level, message) => {
-    console.log('[Recorder]', message);
+    if (config.groqApiKey) {
+      recorderWindow.webContents.send('set-groq-api-key', config.groqApiKey);
+    }
+    recorderWindow.webContents.send('set-transcription-provider', config.transcriptionProvider || 'openai');
   });
 }
 
@@ -143,11 +135,19 @@ function createOverlayWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
 
-  // Small overlay at bottom center
-  const overlayWidth = 280;
-  const overlayHeight = 70;
-  const x = Math.floor((screenWidth - overlayWidth) / 2);
-  const y = screenHeight - overlayHeight - 100; // 100px from bottom
+  // Overlay at bottom center - sized for success state with 2-3 lines
+  const overlayWidth = 360;
+  const overlayHeight = 120;
+
+  // Use saved position or default to bottom center
+  let x, y;
+  if (config.overlayPosition) {
+    x = config.overlayPosition.x;
+    y = config.overlayPosition.y;
+  } else {
+    x = Math.floor((screenWidth - overlayWidth) / 2);
+    y = screenHeight - overlayHeight - 40; // 40px from bottom (lower default)
+  }
 
   overlayWindow = new BrowserWindow({
     width: overlayWidth,
@@ -159,6 +159,7 @@ function createOverlayWindow() {
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
+    movable: true,
     hasShadow: true,
     focusable: false,
     type: 'panel', // macOS: doesn't activate app when shown
@@ -170,6 +171,13 @@ function createOverlayWindow() {
 
   overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
   overlayWindow.setVisibleOnAllWorkspaces(true);
+
+  // Save position when user moves the overlay
+  overlayWindow.on('moved', () => {
+    const [newX, newY] = overlayWindow.getPosition();
+    config.overlayPosition = { x: newX, y: newY };
+    saveConfig(config);
+  });
 
   overlayWindow.on('closed', () => {
     overlayWindow = null;
@@ -183,10 +191,10 @@ function createSettingsWindow() {
   }
 
   settingsWindow = new BrowserWindow({
-    width: 480,
-    height: 580,
+    width: 420,
+    height: 540,
+    center: true,
     resizable: false,
-    useContentSize: true,
     minimizable: false,
     maximizable: false,
     titleBarStyle: 'hiddenInset',
@@ -212,8 +220,8 @@ function createOnboardingWindow() {
   onboardingWindow = new BrowserWindow({
     width: 420,
     height: 620,
+    center: true,
     resizable: false,
-    useContentSize: true,
     minimizable: false,
     maximizable: false,
     titleBarStyle: 'hiddenInset',
@@ -254,17 +262,10 @@ function hideOverlay() {
 
 function createTray() {
   try {
-    console.log('Creating tray...');
     const icon = createTrayIcon('idle');
-    console.log('Icon created, isEmpty:', icon.isEmpty());
-
     tray = new Tray(icon);
-    console.log('Tray object created');
-
     updateTrayMenu();
     tray.setToolTip('Whisp');
-
-    console.log('Tray created successfully');
   } catch (err) {
     console.error('Failed to create tray:', err);
   }
@@ -324,7 +325,6 @@ function startRecording() {
     return;
   }
 
-  console.log('Starting recording...');
   isRecording = true;
   updateTrayIcon('recording');
   updateTrayMenu();
@@ -347,7 +347,6 @@ function startRecording() {
 function stopRecording() {
   if (!isRecording) return;
 
-  console.log('Stopping recording, starting transcription...');
   isRecording = false;
   updateTrayIcon('transcribing');
   updateTrayMenu();
@@ -366,8 +365,6 @@ function stopRecording() {
 }
 
 function cancelRecording() {
-  console.log('Cancelling recording...');
-
   if (!isRecording) {
     hideOverlay();
     return;
@@ -402,11 +399,8 @@ function resetToIdle() {
 // ============================================
 
 function insertText(text) {
-  console.log('Inserting text:', text.substring(0, 50) + '...');
-
   // Copy to clipboard
   clipboard.writeText(text);
-  console.log('Text copied to clipboard');
 
   const { exec } = require('child_process');
 
@@ -419,14 +413,13 @@ function insertText(text) {
         console.error('Failed to paste via AppleScript:', error.message);
         showOverlay('success', { text: 'Copied! Press Cmd+V to paste' });
       } else {
-        console.log('Text pasted successfully');
         showOverlay('success', { text });
       }
 
       setTimeout(() => {
         hideOverlay();
         resetToIdle();
-      }, 1500);
+      }, 3000);
     });
   }, 100);
 }
@@ -445,8 +438,9 @@ ipcMain.handle('save-config', (event, newConfig) => {
   const success = saveConfig(config);
 
   if (recorderWindow && !recorderWindow.isDestroyed()) {
-    console.log('Updating recorder with new API key');
     recorderWindow.webContents.send('set-api-key', config.apiKey);
+    recorderWindow.webContents.send('set-groq-api-key', config.groqApiKey);
+    recorderWindow.webContents.send('set-transcription-provider', config.transcriptionProvider || 'openai');
   }
 
   return success;
@@ -470,9 +464,25 @@ ipcMain.handle('test-api-key', async (event, apiKey) => {
   }
 });
 
-ipcMain.on('transcription-result', (event, text) => {
-  console.log('Received transcription:', text);
+ipcMain.handle('test-groq-api-key', async (event, apiKey) => {
+  try {
+    const fetch = require('node-fetch');
+    const response = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
 
+    if (response.ok) {
+      return { success: true };
+    } else {
+      const data = await response.json();
+      return { success: false, error: data.error?.message || 'Invalid API key' };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.on('transcription-result', (event, text) => {
   // Skip normal processing if this is a test recording from onboarding
   if (isTestRecording) {
     return;
@@ -481,7 +491,6 @@ ipcMain.on('transcription-result', (event, text) => {
   if (text && text.trim()) {
     insertText(text);
   } else {
-    console.log('No speech detected');
     showOverlay('error', { error: 'No speech detected' });
     setTimeout(() => {
       hideOverlay();
@@ -512,7 +521,7 @@ ipcMain.on('transcription-error', (event, error) => {
 });
 
 ipcMain.on('recording-status', (event, status) => {
-  console.log('Recording status:', status);
+  // Status received from recorder (started, stopped, cancelled)
 });
 
 ipcMain.on('audio-levels', (event, levels) => {
@@ -640,36 +649,22 @@ ipcMain.handle('complete-onboarding', () => {
   return { success: true };
 });
 
-ipcMain.handle('resize-onboarding', (event, height) => {
-  if (onboardingWindow && !onboardingWindow.isDestroyed()) {
-    const [width] = onboardingWindow.getContentSize();
-    onboardingWindow.setContentSize(width, height, true);
-  }
-});
-
 // ============================================
 // App Lifecycle
 // ============================================
 
 app.whenReady().then(() => {
-  console.log('App ready, initializing...');
-
   // Check Accessibility permission
-  const trusted = systemPreferences.isTrustedAccessibilityClient(true);
-  console.log('Accessibility permission:', trusted ? 'granted' : 'not granted');
+  systemPreferences.isTrustedAccessibilityClient(true);
 
   createRecorderWindow();
   createTray();
 
   // Show onboarding if not completed, otherwise check for API key
   if (!config.onboardingComplete) {
-    console.log('Onboarding not complete, showing onboarding');
     createOnboardingWindow();
   } else if (!config.apiKey) {
-    console.log('No API key configured, showing settings');
     createSettingsWindow();
-  } else {
-    console.log('API key found in config');
   }
 
   // Register global shortcut
@@ -684,11 +679,7 @@ app.whenReady().then(() => {
       title: 'Whisp',
       body: `Failed to register ${shortcut}. It may be used by another app.`,
     }).show();
-  } else {
-    console.log('Shortcut registered:', shortcut);
   }
-
-  console.log('Whisp ready');
 });
 
 app.on('will-quit', () => {

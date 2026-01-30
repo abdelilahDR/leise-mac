@@ -5,29 +5,36 @@
 </head>
 <body>
   <script>
-    const { ipcRenderer } = require('electron');
-
     let mediaRecorder = null;
     let audioChunks = [];
     let currentStream = null;
     let apiKey = '';
+    let groqApiKey = '';
+    let transcriptionProvider = 'openai'; // 'openai' or 'groq'
     let cancelled = false;
     let audioContext = null;
     let analyser = null;
     let levelInterval = null;
 
     // Receive API key from main process
-    ipcRenderer.on('set-api-key', (event, key) => {
+    window.electronAPI.onSetApiKey((event, key) => {
       apiKey = key;
-      console.log('API key received:', key ? `${key.substring(0, 10)}...` : 'EMPTY');
+    });
+
+    // Receive Groq API key
+    window.electronAPI.onSetGroqApiKey((event, key) => {
+      groqApiKey = key;
+    });
+
+    // Receive transcription provider setting
+    window.electronAPI.onSetTranscriptionProvider((event, provider) => {
+      transcriptionProvider = provider || 'openai';
     });
 
     async function startRecording() {
-      console.log('startRecording called');
       cancelled = false;
 
       try {
-        console.log('Requesting microphone access...');
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             channelCount: 1,
@@ -66,7 +73,7 @@
             levels.push(sum / (bandSize * 255));
           }
 
-          ipcRenderer.send('audio-levels', levels);
+          window.electronAPI.sendAudioLevels(levels);
         }, 50); // ~20fps for smooth animation
 
         mediaRecorder = new MediaRecorder(stream, {
@@ -102,11 +109,11 @@
 
         mediaRecorder.start(100); // Collect data every 100ms
         console.log('MediaRecorder started');
-        ipcRenderer.send('recording-status', 'started');
+        window.electronAPI.sendRecordingStatus('started');
 
       } catch (error) {
         console.error('Failed to start recording:', error);
-        ipcRenderer.send('transcription-error', `Microphone access denied: ${error.message}`);
+        window.electronAPI.sendTranscriptionError(`Microphone access denied: ${error.message}`);
       }
     }
 
@@ -123,7 +130,7 @@
 
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
-        ipcRenderer.send('recording-status', 'stopped');
+        window.electronAPI.sendRecordingStatus('stopped');
       }
     }
 
@@ -208,52 +215,78 @@
       }
 
       audioChunks = [];
-      ipcRenderer.send('recording-status', 'cancelled');
+      window.electronAPI.sendRecordingStatus('cancelled');
     }
 
     async function transcribeAudio(audioBlob) {
       console.log('Starting transcription, blob size:', audioBlob.size);
-      console.log('API key available:', apiKey ? 'YES' : 'NO');
+      console.log('Provider:', transcriptionProvider);
 
-      if (!apiKey) {
+      const useGroq = transcriptionProvider === 'groq';
+      const primaryKey = useGroq ? groqApiKey : apiKey;
+      const fallbackKey = useGroq ? apiKey : groqApiKey;
+      const hasFallback = !!fallbackKey;
+
+      console.log('API key available:', primaryKey ? 'YES' : 'NO');
+      console.log('Fallback available:', hasFallback ? 'YES' : 'NO');
+
+      if (!primaryKey) {
         console.error('No API key!');
-        ipcRenderer.send('transcription-error', 'API key not configured');
+        window.electronAPI.sendTranscriptionError(`${useGroq ? 'Groq' : 'OpenAI'} API key not configured`);
         return;
       }
 
       // Check if there's actually audio data
       if (audioBlob.size < 1000) {
         console.log('Audio blob too small, skipping');
-        ipcRenderer.send('transcription-result', '');
+        window.electronAPI.sendTranscriptionResult('');
         return;
       }
 
-      try {
-        // Send webm directly - it's a supported format
+      // Helper function to call transcription API
+      async function callTranscriptionAPI(provider, key) {
+        const isGroq = provider === 'groq';
         const formData = new FormData();
         const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
         formData.append('file', audioFile);
-        formData.append('model', 'whisper-1');
+        formData.append('model', isGroq ? 'whisper-large-v3' : 'whisper-1');
         formData.append('response_format', 'text');
 
-        console.log('Sending to Whisper API, file size:', audioBlob.size);
+        const endpoint = isGroq
+          ? 'https://api.groq.com/openai/v1/audio/transcriptions'
+          : 'https://api.openai.com/v1/audio/transcriptions';
 
-        // Use AbortController for timeout (60s for long recordings)
+        console.log(`Sending to ${isGroq ? 'Groq' : 'OpenAI'} API, file size:`, audioBlob.size);
+
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        const response = await fetch(endpoint, {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`
-            // Don't set Content-Type - browser will set it with correct boundary
-          },
+          headers: { 'Authorization': `Bearer ${key}` },
           body: formData,
           signal: controller.signal
         });
 
         clearTimeout(timeoutId);
         console.log('API response status:', response.status);
+
+        return { response, provider: isGroq ? 'Groq' : 'OpenAI' };
+      }
+
+      try {
+        // Try primary provider
+        const primaryProvider = useGroq ? 'groq' : 'openai';
+        let { response, provider } = await callTranscriptionAPI(primaryProvider, primaryKey);
+
+        // Check if we should fallback (429 rate limit or 5xx server error)
+        if (!response.ok && hasFallback && (response.status === 429 || response.status >= 500)) {
+          console.log(`${provider} failed with ${response.status}, falling back to ${useGroq ? 'OpenAI' : 'Groq'}...`);
+          const fallbackProvider = useGroq ? 'openai' : 'groq';
+          const fallbackResult = await callTranscriptionAPI(fallbackProvider, fallbackKey);
+          response = fallbackResult.response;
+          provider = fallbackResult.provider;
+        }
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -272,8 +305,8 @@
         }
 
         const text = await response.text();
-        console.log('Transcription result:', text.trim());
-        ipcRenderer.send('transcription-result', text.trim());
+        console.log(`Transcription result (via ${provider}):`, text.trim());
+        window.electronAPI.sendTranscriptionResult(text.trim());
 
       } catch (error) {
         console.error('Transcription failed:', error);
@@ -283,24 +316,22 @@
           message = 'Request timed out. Please try again.';
         }
 
-        ipcRenderer.send('transcription-error', message);
+        window.electronAPI.sendTranscriptionError(message);
       }
     }
 
     // Listen for IPC messages
-    ipcRenderer.on('start-recording', () => {
+    window.electronAPI.onStartRecording(() => {
       startRecording();
     });
 
-    ipcRenderer.on('stop-recording', () => {
+    window.electronAPI.onStopRecording(() => {
       stopRecording();
     });
 
-    ipcRenderer.on('cancel-recording', () => {
+    window.electronAPI.onCancelRecording(() => {
       cancelRecording();
     });
-
-    console.log('Recorder ready');
   </script>
 </body>
 </html>

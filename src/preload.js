@@ -6,16 +6,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   saveConfig: (config) => ipcRenderer.invoke('save-config', config),
   testApiKey: (apiKey) => ipcRenderer.invoke('test-api-key', apiKey),
+  testGroqApiKey: (apiKey) => ipcRenderer.invoke('test-groq-api-key', apiKey),
 
-  // Recording
+  // Recording - receive commands
   onStartRecording: (callback) => ipcRenderer.on('start-recording', callback),
   onStopRecording: (callback) => ipcRenderer.on('stop-recording', callback),
   onCancelRecording: (callback) => ipcRenderer.on('cancel-recording', callback),
+  onSetApiKey: (callback) => ipcRenderer.on('set-api-key', callback),
+  onSetGroqApiKey: (callback) => ipcRenderer.on('set-groq-api-key', callback),
+  onSetTranscriptionProvider: (callback) => ipcRenderer.on('set-transcription-provider', callback),
 
+  // Recording - send results
   sendTranscriptionResult: (text) => ipcRenderer.send('transcription-result', text),
   sendTranscriptionError: (error) => ipcRenderer.send('transcription-error', error),
   sendRecordingStatus: (status) => ipcRenderer.send('recording-status', status),
-  sendAudioLevel: (level) => ipcRenderer.send('audio-level', level),
+  sendAudioLevels: (levels) => ipcRenderer.send('audio-levels', levels),
 
   // Overlay
   onUpdateOverlay: (callback) => ipcRenderer.on('update-overlay', callback),
@@ -38,5 +43,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Onboarding - Complete
   completeOnboarding: () => ipcRenderer.invoke('complete-onboarding'),
-  resizeOnboarding: (height) => ipcRenderer.invoke('resize-onboarding', height),
 });

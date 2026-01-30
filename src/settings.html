@@ -13,10 +13,10 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #1a1a1a;
-      color: #fff;
-      padding: 24px;
-      padding-top: 48px; /* Space for traffic lights */
-      min-height: 100vh;
+      color: #e5e5e5;
+      padding: 20px;
+      padding-top: 44px;
+      overflow: hidden;
     }
 
     .drag-region {
@@ -24,56 +24,148 @@
       top: 0;
       left: 0;
       right: 0;
-      height: 48px;
+      height: 44px;
       -webkit-app-region: drag;
       z-index: 100;
     }
 
     h1 {
-      font-size: 24px;
+      font-size: 20px;
       font-weight: 600;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
+      color: #fff;
     }
 
     .subtitle {
-      color: #888;
-      font-size: 14px;
-      margin-bottom: 32px;
+      color: #666;
+      font-size: 13px;
+      margin-bottom: 20px;
     }
 
-    .form-group {
-      margin-bottom: 24px;
-    }
-
-    label {
-      display: block;
-      font-size: 14px;
-      font-weight: 500;
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #666;
       margin-bottom: 8px;
-      color: #ccc;
     }
 
-    input[type="password"],
-    input[type="text"] {
-      width: 100%;
-      padding: 12px 16px;
-      font-size: 14px;
+    .provider-card {
+      background: #242424;
       border: 1px solid #333;
       border-radius: 8px;
-      background: #2a2a2a;
-      color: #fff;
-      outline: none;
-      transition: border-color 0.2s;
+      padding: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s;
     }
 
-    input:focus {
+    .provider-card:hover {
+      border-color: #444;
+    }
+
+    .provider-card.selected {
+      border-color: #34C759;
+      background: #1f2a1f;
+    }
+
+    .provider-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .provider-radio {
+      width: 16px;
+      height: 16px;
+      accent-color: #34C759;
+      cursor: pointer;
+      margin: 0;
+    }
+
+    .provider-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: #fff;
+    }
+
+    .provider-badge {
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .badge-fast {
+      background: rgba(52, 199, 89, 0.15);
+      color: #34C759;
+    }
+
+    .badge-default {
+      background: rgba(52, 199, 89, 0.15);
+      color: #34C759;
+      display: none;
+      margin-left: auto;
+    }
+
+    .provider-card.selected .badge-default {
+      display: inline-block;
+    }
+
+    .provider-content {
+      margin-left: 26px;
+    }
+
+    .api-key-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .api-key-row input {
+      flex: 1;
+      padding: 8px 10px;
+      font-size: 13px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: #1a1a1a;
+      color: #fff;
+      outline: none;
+      font-family: monospace;
+    }
+
+    .api-key-row input:focus {
       border-color: #007AFF;
     }
 
-    .input-hint {
+    .api-key-row input::placeholder {
+      color: #555;
+    }
+
+    .btn-test {
+      padding: 8px 12px;
       font-size: 12px;
-      color: #666;
-      margin-top: 8px;
+      font-weight: 500;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: transparent;
+      color: #888;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-test:hover {
+      border-color: #007AFF;
+      color: #007AFF;
+    }
+
+    .input-hint {
+      font-size: 11px;
+      color: #555;
+      margin-top: 6px;
     }
 
     .input-hint a {
@@ -85,241 +177,362 @@
       text-decoration: underline;
     }
 
-    .shortcut-display {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 16px;
-      background: #2a2a2a;
-      border: 1px solid #333;
-      border-radius: 8px;
-      font-family: monospace;
-      font-size: 14px;
-    }
-
-    .key {
-      background: #444;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-    }
-
-    .buttons {
-      display: flex;
-      gap: 12px;
-      margin-top: 32px;
-    }
-
-    button {
-      padding: 12px 24px;
-      font-size: 14px;
-      font-weight: 500;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .btn-primary {
-      background: #007AFF;
-      color: #fff;
-    }
-
-    .btn-primary:hover {
-      background: #0056b3;
-    }
-
-    .btn-primary:disabled {
-      background: #444;
-      cursor: not-allowed;
-    }
-
-    .btn-secondary {
-      background: #333;
-      color: #fff;
-    }
-
-    .btn-secondary:hover {
-      background: #444;
-    }
-
-    .btn-test {
-      background: #2a2a2a;
-      color: #007AFF;
-      border: 1px solid #007AFF;
-      padding: 8px 16px;
-      font-size: 12px;
-      margin-top: 8px;
-    }
-
-    .btn-test:hover {
-      background: #007AFF;
-      color: #fff;
-    }
-
     .status {
-      margin-top: 12px;
-      padding: 12px;
-      border-radius: 8px;
-      font-size: 13px;
+      margin-top: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
       display: none;
     }
 
     .status.success {
       display: block;
-      background: rgba(52, 199, 89, 0.2);
+      background: rgba(52, 199, 89, 0.1);
       color: #34C759;
     }
 
     .status.error {
       display: block;
-      background: rgba(255, 59, 48, 0.2);
+      background: rgba(255, 59, 48, 0.1);
       color: #FF3B30;
     }
 
+    .shortcuts-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #2a2a2a;
+    }
+
+    .shortcut-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+    }
+
+    .shortcut-label {
+      font-size: 13px;
+      color: #888;
+    }
+
+    .shortcut-keys {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .key {
+      background: #2a2a2a;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: monospace;
+      color: #aaa;
+    }
+
+    .key-separator {
+      color: #555;
+      font-size: 11px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .btn-primary {
+      flex: 1;
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: #007AFF;
+      color: #fff;
+      transition: background 0.15s;
+    }
+
+    .btn-primary:hover {
+      background: #0066dd;
+    }
+
+    .btn-primary:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid #333;
+      border-radius: 6px;
+      cursor: pointer;
+      background: transparent;
+      color: #888;
+      transition: all 0.15s;
+    }
+
+    .btn-secondary:hover {
+      border-color: #444;
+      color: #aaa;
+    }
+
     .permission-warning {
-      background: rgba(255, 149, 0, 0.2);
-      border: 1px solid rgba(255, 149, 0, 0.3);
-      padding: 16px;
-      border-radius: 8px;
-      margin-bottom: 24px;
+      background: rgba(255, 149, 0, 0.1);
+      border: 1px solid rgba(255, 149, 0, 0.2);
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 16px;
     }
 
     .permission-warning h3 {
       color: #FF9500;
-      font-size: 14px;
-      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 6px;
     }
 
-    .permission-warning p {
-      font-size: 13px;
-      color: #ccc;
+    .permission-warning p,
+    .permission-warning ol {
+      font-size: 11px;
+      color: #999;
       line-height: 1.5;
     }
 
     .permission-warning ol {
-      margin-top: 8px;
-      margin-left: 20px;
-      font-size: 13px;
-      color: #ccc;
+      margin-top: 6px;
+      margin-left: 16px;
     }
 
     .permission-warning li {
-      margin-bottom: 4px;
+      margin-bottom: 2px;
     }
   </style>
 </head>
 <body>
   <div class="drag-region"></div>
   <h1>Whisp</h1>
-  <p class="subtitle">Configure your voice dictation settings</p>
+  <p class="subtitle">Voice dictation settings</p>
 
   <div id="permissionWarning" class="permission-warning" style="display: none;">
     <h3>Accessibility Permission Required</h3>
     <p>To type text at your cursor, Whisp needs Accessibility permission:</p>
     <ol>
-      <li>Open System Settings > Privacy & Security > Accessibility</li>
-      <li>Click the + button and add Whisp</li>
+      <li>Open System Settings → Privacy & Security → Accessibility</li>
       <li>Enable the toggle next to Whisp</li>
     </ol>
   </div>
 
-  <div class="form-group">
-    <label for="apiKey">OpenAI API Key</label>
-    <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off">
-    <p class="input-hint">
-      Get your API key from <a href="#" id="openaiLink">platform.openai.com/api-keys</a>
-    </p>
-    <button class="btn-test" id="testBtn">Test API Key</button>
-    <div id="testStatus" class="status"></div>
-  </div>
+  <p class="section-label">Transcription Provider</p>
 
-  <div class="form-group">
-    <label>Keyboard Shortcut</label>
-    <div class="shortcut-display">
-      <span class="key">Ctrl</span>
-      <span>+</span>
-      <span class="key">Space</span>
-      <span style="color: #666; margin-left: 8px;">to start/stop recording</span>
+  <!-- Groq Provider Card -->
+  <div class="provider-card selected" id="groqCard" data-provider="groq">
+    <div class="provider-header">
+      <input type="radio" name="provider" class="provider-radio" id="radioGroq" checked>
+      <span class="provider-name">Groq</span>
+      <span class="provider-badge badge-fast">Fast</span>
+      <span class="provider-badge badge-default">Default</span>
+    </div>
+    <div class="provider-content">
+      <div class="api-key-row">
+        <input type="password" id="groqApiKey" placeholder="gsk_..." autocomplete="off">
+        <button class="btn-test" id="testGroqBtn">Test</button>
+      </div>
+      <p class="input-hint">Free key from <a href="#" id="groqLink">console.groq.com</a></p>
+      <div id="testGroqStatus" class="status"></div>
     </div>
   </div>
 
-  <div class="form-group">
-    <label>Cancel Recording</label>
-    <div class="shortcut-display">
-      <span class="key">Esc</span>
-      <span style="color: #666; margin-left: 8px;">to cancel and discard</span>
+  <!-- OpenAI Provider Card -->
+  <div class="provider-card" id="openaiCard" data-provider="openai">
+    <div class="provider-header">
+      <input type="radio" name="provider" class="provider-radio" id="radioOpenai">
+      <span class="provider-name">OpenAI</span>
+      <span class="provider-badge badge-default">Default</span>
+    </div>
+    <div class="provider-content">
+      <div class="api-key-row">
+        <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off">
+        <button class="btn-test" id="testBtn">Test</button>
+      </div>
+      <p class="input-hint">Get key from <a href="#" id="openaiLink">platform.openai.com</a></p>
+      <div id="testStatus" class="status"></div>
+    </div>
+  </div>
+
+  <div class="shortcuts-section">
+    <p class="section-label">Shortcuts</p>
+    <div class="shortcut-row">
+      <span class="shortcut-label">Record</span>
+      <div class="shortcut-keys">
+        <span class="key">Ctrl</span>
+        <span class="key-separator">+</span>
+        <span class="key">Space</span>
+      </div>
+    </div>
+    <div class="shortcut-row">
+      <span class="shortcut-label">Cancel</span>
+      <div class="shortcut-keys">
+        <span class="key">Esc</span>
+      </div>
     </div>
   </div>
 
   <div class="buttons">
-    <button class="btn-primary" id="saveBtn">Save Settings</button>
     <button class="btn-secondary" id="cancelBtn">Cancel</button>
+    <button class="btn-primary" id="saveBtn">Save</button>
   </div>
 
   <script>
     const apiKeyInput = document.getElementById('apiKey');
+    const groqApiKeyInput = document.getElementById('groqApiKey');
     const testBtn = document.getElementById('testBtn');
+    const testGroqBtn = document.getElementById('testGroqBtn');
     const testStatus = document.getElementById('testStatus');
+    const testGroqStatus = document.getElementById('testGroqStatus');
     const saveBtn = document.getElementById('saveBtn');
     const cancelBtn = document.getElementById('cancelBtn');
     const openaiLink = document.getElementById('openaiLink');
+    const groqLink = document.getElementById('groqLink');
     const permissionWarning = document.getElementById('permissionWarning');
+    const groqCard = document.getElementById('groqCard');
+    const openaiCard = document.getElementById('openaiCard');
+    const radioGroq = document.getElementById('radioGroq');
+    const radioOpenai = document.getElementById('radioOpenai');
+
+    let currentProvider = 'groq';
+
+    // Provider switching
+    function setProvider(provider) {
+      currentProvider = provider;
+      groqCard.classList.toggle('selected', provider === 'groq');
+      openaiCard.classList.toggle('selected', provider === 'openai');
+      radioGroq.checked = provider === 'groq';
+      radioOpenai.checked = provider === 'openai';
+    }
+
+    // Click on card to select provider
+    groqCard.addEventListener('click', (e) => {
+      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
+        setProvider('groq');
+      }
+    });
+    openaiCard.addEventListener('click', (e) => {
+      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
+        setProvider('openai');
+      }
+    });
+
+    // Radio button clicks
+    radioGroq.addEventListener('change', () => setProvider('groq'));
+    radioOpenai.addEventListener('change', () => setProvider('openai'));
 
     // Load existing config
     window.electronAPI.getConfig().then(config => {
       if (config.apiKey) {
         apiKeyInput.value = config.apiKey;
       }
+      if (config.groqApiKey) {
+        groqApiKeyInput.value = config.groqApiKey;
+      }
+      if (config.transcriptionProvider) {
+        setProvider(config.transcriptionProvider);
+      }
       if (config.needsAccessibility) {
         permissionWarning.style.display = 'block';
       }
     });
 
-    // Open OpenAI link
+    // Open links
     openaiLink.addEventListener('click', (e) => {
       e.preventDefault();
       require('electron').shell.openExternal('https://platform.openai.com/api-keys');
     });
 
-    // Test API key
+    groqLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      require('electron').shell.openExternal('https://console.groq.com/keys');
+    });
+
+    // Test OpenAI API key
     testBtn.addEventListener('click', async () => {
       const apiKey = apiKeyInput.value.trim();
       if (!apiKey) {
         testStatus.className = 'status error';
-        testStatus.textContent = 'Please enter an API key';
+        testStatus.textContent = 'Enter an API key';
         return;
       }
 
       testBtn.disabled = true;
-      testBtn.textContent = 'Testing...';
+      testBtn.textContent = '...';
       testStatus.className = 'status';
-      testStatus.style.display = 'none';
 
       try {
         const result = await window.electronAPI.testApiKey(apiKey);
         if (result.success) {
           testStatus.className = 'status success';
-          testStatus.textContent = 'API key is valid!';
+          testStatus.textContent = 'Valid';
         } else {
           testStatus.className = 'status error';
-          testStatus.textContent = result.error || 'Invalid API key';
+          testStatus.textContent = result.error || 'Invalid key';
         }
       } catch (err) {
         testStatus.className = 'status error';
-        testStatus.textContent = 'Failed to test API key';
+        testStatus.textContent = 'Test failed';
       }
 
       testBtn.disabled = false;
-      testBtn.textContent = 'Test API Key';
+      testBtn.textContent = 'Test';
+    });
+
+    // Test Groq API key
+    testGroqBtn.addEventListener('click', async () => {
+      const apiKey = groqApiKeyInput.value.trim();
+      if (!apiKey) {
+        testGroqStatus.className = 'status error';
+        testGroqStatus.textContent = 'Enter an API key';
+        return;
+      }
+
+      testGroqBtn.disabled = true;
+      testGroqBtn.textContent = '...';
+      testGroqStatus.className = 'status';
+
+      try {
+        const result = await window.electronAPI.testGroqApiKey(apiKey);
+        if (result.success) {
+          testGroqStatus.className = 'status success';
+          testGroqStatus.textContent = 'Valid';
+        } else {
+          testGroqStatus.className = 'status error';
+          testGroqStatus.textContent = result.error || 'Invalid key';
+        }
+      } catch (err) {
+        testGroqStatus.className = 'status error';
+        testGroqStatus.textContent = 'Test failed';
+      }
+
+      testGroqBtn.disabled = false;
+      testGroqBtn.textContent = 'Test';
     });
 
     // Save settings
     saveBtn.addEventListener('click', async () => {
       const apiKey = apiKeyInput.value.trim();
-      if (!apiKey) {
+      const groqApiKey = groqApiKeyInput.value.trim();
+
+      if (currentProvider === 'openai' && !apiKey) {
         testStatus.className = 'status error';
-        testStatus.textContent = 'Please enter an API key';
+        testStatus.textContent = 'Enter OpenAI API key';
+        return;
+      }
+      if (currentProvider === 'groq' && !groqApiKey) {
+        testGroqStatus.className = 'status error';
+        testGroqStatus.textContent = 'Enter Groq API key';
         return;
       }
 
@@ -327,13 +540,18 @@
       saveBtn.textContent = 'Saving...';
 
       try {
-        await window.electronAPI.saveConfig({ apiKey });
+        await window.electronAPI.saveConfig({
+          apiKey,
+          groqApiKey,
+          transcriptionProvider: currentProvider
+        });
         window.electronAPI.closeSettings();
       } catch (err) {
-        testStatus.className = 'status error';
-        testStatus.textContent = 'Failed to save settings';
+        const statusEl = currentProvider === 'openai' ? testStatus : testGroqStatus;
+        statusEl.className = 'status error';
+        statusEl.textContent = 'Save failed';
         saveBtn.disabled = false;
-        saveBtn.textContent = 'Save Settings';
+        saveBtn.textContent = 'Save';
       }
     });
 
