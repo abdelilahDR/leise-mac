@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Whisp</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      background: transparent;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    .overlay {
+      background: rgba(30, 30, 30, 0.95);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 12px 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .main-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .waveform {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 20px;
+    }
+
+    .bar {
+      width: 3px;
+      background: #FF3B30;
+      border-radius: 2px;
+      min-height: 4px;
+      height: 4px;
+      transition: height 0.05s ease-out;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #FF3B30;
+    }
+
+    .dot.orange { background: #FF9500; }
+    .dot.green { background: #34C759; }
+    .dot.red { background: #FF3B30; }
+
+    .status {
+      font-size: 14px;
+      font-weight: 500;
+      color: #fff;
+    }
+
+    .timer {
+      font-size: 14px;
+      font-weight: 400;
+      color: #888;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: #666;
+    }
+
+    .hint kbd {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: inherit;
+      font-size: 10px;
+    }
+
+    .error-text {
+      font-size: 12px;
+      color: #FF3B30;
+      max-width: 240px;
+      text-align: center;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .success-text {
+      font-size: 12px;
+      color: #34C759;
+    }
+
+    .spinner {
+      width: 10px;
+      height: 10px;
+      border: 2px solid rgba(255, 149, 0, 0.3);
+      border-top-color: #FF9500;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="overlay">
+    <!-- Recording state -->
+    <div id="recordingState">
+      <div class="main-row">
+        <div class="waveform" id="waveform">
+          <div class="bar" id="bar0"></div>
+          <div class="bar" id="bar1"></div>
+          <div class="bar" id="bar2"></div>
+          <div class="bar" id="bar3"></div>
+          <div class="bar" id="bar4"></div>
+        </div>
+        <span class="status">Recording</span>
+        <span class="timer" id="timer">00:00</span>
+      </div>
+      <div class="hint"><kbd>Ctrl+Space</kbd> to stop · <kbd>ESC</kbd> or click to cancel</div>
+    </div>
+
+    <!-- Transcribing state -->
+    <div id="transcribingState" class="hidden">
+      <div class="main-row">
+        <div class="spinner"></div>
+        <span class="status">Transcribing...</span>
+      </div>
+    </div>
+
+    <!-- Success state -->
+    <div id="successState" class="hidden">
+      <div class="main-row">
+        <div class="dot green"></div>
+        <span class="success-text" id="successText">Done!</span>
+      </div>
+    </div>
+
+    <!-- Error state -->
+    <div id="errorState" class="hidden">
+      <div class="main-row">
+        <div class="dot red"></div>
+        <span class="error-text" id="errorText">Error</span>
+      </div>
+      <div class="hint"><kbd>ESC</kbd> to close</div>
+    </div>
+  </div>
+
+  <script>
+    const recordingState = document.getElementById('recordingState');
+    const transcribingState = document.getElementById('transcribingState');
+    const successState = document.getElementById('successState');
+    const errorState = document.getElementById('errorState');
+    const timerEl = document.getElementById('timer');
+    const successText = document.getElementById('successText');
+    const errorText = document.getElementById('errorText');
+
+    // Get bar elements for waveform animation
+    const bars = [
+      document.getElementById('bar0'),
+      document.getElementById('bar1'),
+      document.getElementById('bar2'),
+      document.getElementById('bar3'),
+      document.getElementById('bar4'),
+    ];
+
+    let startTime = Date.now();
+    let timerInterval = null;
+
+    function updateTimer() {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+      const secs = (elapsed % 60).toString().padStart(2, '0');
+      timerEl.textContent = `${mins}:${secs}`;
+    }
+
+    function startTimer() {
+      startTime = Date.now();
+      timerInterval = setInterval(updateTimer, 1000);
+      updateTimer();
+    }
+
+    function stopTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    }
+
+    function showState(state, data = {}) {
+      recordingState.classList.add('hidden');
+      transcribingState.classList.add('hidden');
+      successState.classList.add('hidden');
+      errorState.classList.add('hidden');
+
+      switch (state) {
+        case 'recording':
+          recordingState.classList.remove('hidden');
+          startTimer();
+          break;
+        case 'transcribing':
+          transcribingState.classList.remove('hidden');
+          stopTimer();
+          break;
+        case 'success':
+          successState.classList.remove('hidden');
+          const text = data.text || 'Done!';
+          successText.textContent = text.length > 40 ? text.substring(0, 40) + '...' : text;
+          stopTimer();
+          break;
+        case 'error':
+          errorState.classList.remove('hidden');
+          errorText.textContent = data.error || 'An error occurred';
+          stopTimer();
+          break;
+      }
+    }
+
+    // Listen for state updates
+    window.electronAPI.onUpdateOverlay((event, data) => {
+      showState(data.state, data);
+    });
+
+    // Listen for audio levels and animate bars
+    window.electronAPI.onAudioLevels((event, levels) => {
+      if (Array.isArray(levels) && levels.length === 5) {
+        for (let i = 0; i < 5; i++) {
+          // Scale level (0-1) to height (4px min, 20px max)
+          const height = 4 + (levels[i] * 16);
+          bars[i].style.height = `${height}px`;
+        }
+      }
+    });
+
+    // Click on overlay to dismiss (for success/error states)
+    document.querySelector('.overlay').addEventListener('click', () => {
+      window.electronAPI.closeOverlay();
+    });
+
+    // Initial state
+    showState('recording');
+  </script>
+</body>
+</html>

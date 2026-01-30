@@ -1,5 +1,5 @@
 {
-  "name": "voice-dictation-mac",
+  "name": "whisp",
   "version": "1.0.0",
   "description": "macOS voice dictation app using OpenAI Whisper",
   "main": "src/main.js",
@@ -16,21 +16,20 @@
   },
   "dependencies": {
     "form-data": "^4.0.0",
-    "node-fetch": "^2.7.0",
-    "node-global-key-listener": "^0.3.0"
+    "node-fetch": "^2.7.0"
   },
   "build": {
-    "appId": "com.moonsight.voice-dictation",
-    "productName": "Voice Dictation",
+    "appId": "com.moonsight.whisp",
+    "productName": "Whisp",
     "mac": {
       "category": "public.app-category.productivity",
-      "icon": "assets/icon.icns",
+      "icon": "build/icon.png",
       "target": ["dmg", "zip"],
       "hardenedRuntime": true,
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Voice Dictation needs microphone access to transcribe your speech."
+        "NSMicrophoneUsageDescription": "Whisp needs microphone access to transcribe your speech."
       }
     }
   }

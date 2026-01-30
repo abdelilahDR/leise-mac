@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Whisp Settings</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 24px;
+      padding-top: 48px; /* Space for traffic lights */
+      min-height: 100vh;
+    }
+
+    .drag-region {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 48px;
+      -webkit-app-region: drag;
+      z-index: 100;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+
+    .form-group {
+      margin-bottom: 24px;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: #ccc;
+    }
+
+    input[type="password"],
+    input[type="text"] {
+      width: 100%;
+      padding: 12px 16px;
+      font-size: 14px;
+      border: 1px solid #333;
+      border-radius: 8px;
+      background: #2a2a2a;
+      color: #fff;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus {
+      border-color: #007AFF;
+    }
+
+    .input-hint {
+      font-size: 12px;
+      color: #666;
+      margin-top: 8px;
+    }
+
+    .input-hint a {
+      color: #007AFF;
+      text-decoration: none;
+    }
+
+    .input-hint a:hover {
+      text-decoration: underline;
+    }
+
+    .shortcut-display {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #2a2a2a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+
+    .key {
+      background: #444;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 500;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #007AFF;
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: #0056b3;
+    }
+
+    .btn-primary:disabled {
+      background: #444;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: #333;
+      color: #fff;
+    }
+
+    .btn-secondary:hover {
+      background: #444;
+    }
+
+    .btn-test {
+      background: #2a2a2a;
+      color: #007AFF;
+      border: 1px solid #007AFF;
+      padding: 8px 16px;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    .btn-test:hover {
+      background: #007AFF;
+      color: #fff;
+    }
+
+    .status {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+
+    .status.success {
+      display: block;
+      background: rgba(52, 199, 89, 0.2);
+      color: #34C759;
+    }
+
+    .status.error {
+      display: block;
+      background: rgba(255, 59, 48, 0.2);
+      color: #FF3B30;
+    }
+
+    .permission-warning {
+      background: rgba(255, 149, 0, 0.2);
+      border: 1px solid rgba(255, 149, 0, 0.3);
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+    }
+
+    .permission-warning h3 {
+      color: #FF9500;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .permission-warning p {
+      font-size: 13px;
+      color: #ccc;
+      line-height: 1.5;
+    }
+
+    .permission-warning ol {
+      margin-top: 8px;
+      margin-left: 20px;
+      font-size: 13px;
+      color: #ccc;
+    }
+
+    .permission-warning li {
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="drag-region"></div>
+  <h1>Whisp</h1>
+  <p class="subtitle">Configure your voice dictation settings</p>
+
+  <div id="permissionWarning" class="permission-warning" style="display: none;">
+    <h3>Accessibility Permission Required</h3>
+    <p>To type text at your cursor, Whisp needs Accessibility permission:</p>
+    <ol>
+      <li>Open System Settings > Privacy & Security > Accessibility</li>
+      <li>Click the + button and add Whisp</li>
+      <li>Enable the toggle next to Whisp</li>
+    </ol>
+  </div>
+
+  <div class="form-group">
+    <label for="apiKey">OpenAI API Key</label>
+    <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off">
+    <p class="input-hint">
+      Get your API key from <a href="#" id="openaiLink">platform.openai.com/api-keys</a>
+    </p>
+    <button class="btn-test" id="testBtn">Test API Key</button>
+    <div id="testStatus" class="status"></div>
+  </div>
+
+  <div class="form-group">
+    <label>Keyboard Shortcut</label>
+    <div class="shortcut-display">
+      <span class="key">Ctrl</span>
+      <span>+</span>
+      <span class="key">Space</span>
+      <span style="color: #666; margin-left: 8px;">to start/stop recording</span>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>Cancel Recording</label>
+    <div class="shortcut-display">
+      <span class="key">Esc</span>
+      <span style="color: #666; margin-left: 8px;">to cancel and discard</span>
+    </div>
+  </div>
+
+  <div class="buttons">
+    <button class="btn-primary" id="saveBtn">Save Settings</button>
+    <button class="btn-secondary" id="cancelBtn">Cancel</button>
+  </div>
+
+  <script>
+    const apiKeyInput = document.getElementById('apiKey');
+    const testBtn = document.getElementById('testBtn');
+    const testStatus = document.getElementById('testStatus');
+    const saveBtn = document.getElementById('saveBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const openaiLink = document.getElementById('openaiLink');
+    const permissionWarning = document.getElementById('permissionWarning');
+
+    // Load existing config
+    window.electronAPI.getConfig().then(config => {
+      if (config.apiKey) {
+        apiKeyInput.value = config.apiKey;
+      }
+      if (config.needsAccessibility) {
+        permissionWarning.style.display = 'block';
+      }
+    });
+
+    // Open OpenAI link
+    openaiLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      require('electron').shell.openExternal('https://platform.openai.com/api-keys');
+    });
+
+    // Test API key
+    testBtn.addEventListener('click', async () => {
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) {
+        testStatus.className = 'status error';
+        testStatus.textContent = 'Please enter an API key';
+        return;
+      }
+
+      testBtn.disabled = true;
+      testBtn.textContent = 'Testing...';
+      testStatus.className = 'status';
+      testStatus.style.display = 'none';
+
+      try {
+        const result = await window.electronAPI.testApiKey(apiKey);
+        if (result.success) {
+          testStatus.className = 'status success';
+          testStatus.textContent = 'API key is valid!';
+        } else {
+          testStatus.className = 'status error';
+          testStatus.textContent = result.error || 'Invalid API key';
+        }
+      } catch (err) {
+        testStatus.className = 'status error';
+        testStatus.textContent = 'Failed to test API key';
+      }
+
+      testBtn.disabled = false;
+      testBtn.textContent = 'Test API Key';
+    });
+
+    // Save settings
+    saveBtn.addEventListener('click', async () => {
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) {
+        testStatus.className = 'status error';
+        testStatus.textContent = 'Please enter an API key';
+        return;
+      }
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      try {
+        await window.electronAPI.saveConfig({ apiKey });
+        window.electronAPI.closeSettings();
+      } catch (err) {
+        testStatus.className = 'status error';
+        testStatus.textContent = 'Failed to save settings';
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Settings';
+      }
+    });
+
+    // Cancel
+    cancelBtn.addEventListener('click', () => {
+      window.electronAPI.closeSettings();
+    });
+  </script>
+</body>
+</html>
