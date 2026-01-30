@@ -25,4 +25,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Settings window
   onShowSettings: (callback) => ipcRenderer.on('show-settings', callback),
   closeSettings: () => ipcRenderer.send('close-settings'),
+
+  // Onboarding - Permission checks
+  checkMicrophone: () => ipcRenderer.invoke('check-microphone'),
+  requestMicrophone: () => ipcRenderer.invoke('request-microphone'),
+  checkAccessibility: () => ipcRenderer.invoke('check-accessibility'),
+  requestAccessibility: () => ipcRenderer.invoke('request-accessibility'),
+
+  // Onboarding - Test recording
+  startTestRecording: () => ipcRenderer.invoke('start-test-recording'),
+  stopTestRecording: () => ipcRenderer.invoke('stop-test-recording'),
+
+  // Onboarding - Complete
+  completeOnboarding: () => ipcRenderer.invoke('complete-onboarding'),
+  resizeOnboarding: (height) => ipcRenderer.invoke('resize-onboarding', height),
 });

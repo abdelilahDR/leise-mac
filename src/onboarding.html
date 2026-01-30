@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Welcome to Whisp</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 20px;
+      padding-top: 44px;
+      overflow: hidden;
+    }
+
+    .drag-region {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 44px;
+      -webkit-app-region: drag;
+      z-index: 100;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      color: #888;
+      font-size: 14px;
+    }
+
+    .checklist {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .checklist-item {
+      background: #2a2a2a;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 12px 14px;
+      transition: border-color 0.3s;
+    }
+
+    .checklist-item.completed {
+      border-color: #34C759;
+    }
+
+    .checklist-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .checklist-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .checklist-icon.pending {
+      background: #444;
+      color: #888;
+    }
+
+    .checklist-icon.completed {
+      background: #34C759;
+      color: #fff;
+    }
+
+    .checklist-title {
+      font-size: 14px;
+      font-weight: 500;
+      flex: 1;
+    }
+
+    .checklist-content {
+      margin-left: 34px;
+      margin-top: 6px;
+    }
+
+    .checklist-desc {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .checklist-desc.success {
+      color: #34C759;
+    }
+
+    button {
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-action {
+      background: #007AFF;
+      color: #fff;
+    }
+
+    .btn-action:hover {
+      background: #0056b3;
+    }
+
+    .btn-action:disabled {
+      background: #444;
+      color: #666;
+      cursor: not-allowed;
+    }
+
+    .btn-small {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    .api-key-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .api-key-row input {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: 13px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: #1a1a1a;
+      color: #fff;
+      outline: none;
+    }
+
+    .api-key-row input:focus {
+      border-color: #007AFF;
+    }
+
+    .input-hint {
+      font-size: 11px;
+      color: #666;
+    }
+
+    .input-hint a {
+      color: #007AFF;
+      text-decoration: none;
+    }
+
+    .test-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .test-result {
+      font-size: 12px;
+      color: #34C759;
+      flex: 1;
+    }
+
+    .recording-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #FF3B30;
+      font-size: 13px;
+    }
+
+    .recording-dot {
+      width: 10px;
+      height: 10px;
+      background: #FF3B30;
+      border-radius: 50%;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.9); }
+    }
+
+    .btn-done {
+      background: #FF3B30;
+      color: #fff;
+    }
+
+    .btn-done:hover {
+      background: #d63229;
+    }
+
+    .success-section {
+      background: linear-gradient(135deg, #1a3a1a 0%, #1a2a1a 100%);
+      border: 1px solid #34C759;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    .success-section.visible {
+      display: block;
+    }
+
+    .success-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .success-header h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #34C759;
+    }
+
+    .success-content {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .success-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #ccc;
+    }
+
+    .success-row img {
+      width: 20px;
+      height: 20px;
+    }
+
+    .success-row .icon {
+      font-size: 16px;
+      width: 20px;
+      text-align: center;
+    }
+
+    .kbd {
+      background: #444;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 11px;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: center;
+    }
+
+    .btn-start {
+      background: #34C759;
+      color: #fff;
+      padding: 12px 40px;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: 10px;
+      width: 100%;
+    }
+
+    .btn-start:hover {
+      background: #2db84d;
+    }
+
+    .btn-start:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="drag-region"></div>
+
+  <div class="header">
+    <h1>Welcome to Whisp</h1>
+    <p class="subtitle">Voice-to-text in one shortcut</p>
+  </div>
+
+  <div class="checklist">
+    <!-- Step 1: Microphone -->
+    <div class="checklist-item" id="micStep">
+      <div class="checklist-header">
+        <div class="checklist-icon pending" id="micIcon">1</div>
+        <span class="checklist-title">Microphone Access</span>
+        <button class="btn-action btn-small" id="micBtn" style="display: none;">Grant</button>
+      </div>
+      <div class="checklist-content">
+        <p class="checklist-desc" id="micDesc">Checking microphone access...</p>
+      </div>
+    </div>
+
+    <!-- Step 2: Accessibility -->
+    <div class="checklist-item" id="accessStep">
+      <div class="checklist-header">
+        <div class="checklist-icon pending" id="accessIcon">2</div>
+        <span class="checklist-title">Accessibility Permission</span>
+        <button class="btn-action btn-small" id="accessBtn" style="display: none;">Grant</button>
+      </div>
+      <div class="checklist-content">
+        <p class="checklist-desc" id="accessDesc">Checking accessibility permission...</p>
+      </div>
+    </div>
+
+    <!-- Step 3: API Key -->
+    <div class="checklist-item" id="apiStep">
+      <div class="checklist-header">
+        <div class="checklist-icon pending" id="apiIcon">3</div>
+        <span class="checklist-title">OpenAI API Key</span>
+      </div>
+      <div class="checklist-content">
+        <p class="checklist-desc" id="apiDesc">Connect to OpenAI for speech-to-text transcription</p>
+        <div class="api-key-row">
+          <input type="password" id="apiKeyInput" placeholder="sk-..." autocomplete="off">
+          <button class="btn-action btn-small" id="apiTestBtn">Test</button>
+        </div>
+        <p class="input-hint">Get your key at <a href="#" id="openaiLink">platform.openai.com/api-keys</a></p>
+      </div>
+    </div>
+
+    <!-- Step 4: Test Recording -->
+    <div class="checklist-item" id="testStep">
+      <div class="checklist-header">
+        <div class="checklist-icon pending" id="testIcon">4</div>
+        <span class="checklist-title">Test Recording</span>
+      </div>
+      <div class="checklist-content">
+        <p class="checklist-desc" id="testDesc">Complete the steps above to try a test recording</p>
+        <div class="test-row" id="testStartRow">
+          <button class="btn-action btn-small" id="testRecordBtn" disabled>Try It</button>
+        </div>
+        <div class="test-row" id="testRecordingRow" style="display: none;">
+          <div class="recording-indicator">
+            <div class="recording-dot"></div>
+            <span>Recording...</span>
+          </div>
+          <button class="btn-action btn-small btn-done" id="testDoneBtn">Done</button>
+        </div>
+        <div class="test-row" id="testTranscribingRow" style="display: none;">
+          <span style="color: #888; font-size: 12px;">Transcribing...</span>
+        </div>
+        <div class="test-result" id="testResult" style="display: none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Success Section - shown after all steps complete -->
+  <div class="success-section" id="successSection">
+    <div class="success-header">
+      <span style="font-size: 20px;">🎉</span>
+      <h2>You're all set!</h2>
+    </div>
+    <div class="success-content">
+      <div class="success-row">
+        <img src="icons/tray-idle.png" alt="Whisp icon" id="trayIconPreview">
+        <span>Find Whisp in your <strong>menu bar</strong> (top right)</span>
+      </div>
+      <div class="success-row">
+        <span class="icon">⌨️</span>
+        <span>Press <span class="kbd">Ctrl</span> + <span class="kbd">Space</span> to start/stop recording</span>
+      </div>
+      <div class="success-row">
+        <span class="icon">⚙️</span>
+        <span>Access Settings anytime from the menu</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <button class="btn-start" id="startBtn" disabled>Get Started</button>
+  </div>
+
+  <script>
+    const state = {
+      microphone: false,
+      accessibility: false,
+      apiKey: false,
+      testRecording: false,
+      isRecording: false
+    };
+
+    // Elements
+    const micIcon = document.getElementById('micIcon');
+    const micDesc = document.getElementById('micDesc');
+    const micBtn = document.getElementById('micBtn');
+    const micStep = document.getElementById('micStep');
+
+    const accessIcon = document.getElementById('accessIcon');
+    const accessDesc = document.getElementById('accessDesc');
+    const accessBtn = document.getElementById('accessBtn');
+    const accessStep = document.getElementById('accessStep');
+
+    const apiIcon = document.getElementById('apiIcon');
+    const apiDesc = document.getElementById('apiDesc');
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const apiTestBtn = document.getElementById('apiTestBtn');
+    const apiStep = document.getElementById('apiStep');
+
+    const testIcon = document.getElementById('testIcon');
+    const testDesc = document.getElementById('testDesc');
+    const testRecordBtn = document.getElementById('testRecordBtn');
+    const testDoneBtn = document.getElementById('testDoneBtn');
+    const testStartRow = document.getElementById('testStartRow');
+    const testRecordingRow = document.getElementById('testRecordingRow');
+    const testTranscribingRow = document.getElementById('testTranscribingRow');
+    const testResult = document.getElementById('testResult');
+    const testStep = document.getElementById('testStep');
+
+    const successSection = document.getElementById('successSection');
+    const startBtn = document.getElementById('startBtn');
+    const openaiLink = document.getElementById('openaiLink');
+
+    function setCompleted(icon, step) {
+      icon.className = 'checklist-icon completed';
+      icon.innerHTML = '✓';
+      step.classList.add('completed');
+    }
+
+    function checkAllComplete() {
+      const allComplete = state.microphone && state.accessibility && state.apiKey && state.testRecording;
+      startBtn.disabled = !allComplete;
+
+      if (allComplete && !successSection.classList.contains('visible')) {
+        successSection.classList.add('visible');
+        // Resize window to fit success section
+        setTimeout(() => {
+          const height = document.body.scrollHeight + 44; // +44 for title bar
+          window.electronAPI.resizeOnboarding(height);
+        }, 50);
+      }
+
+      // Enable test recording if first 3 steps are complete
+      const canTest = state.microphone && state.accessibility && state.apiKey && !state.testRecording;
+      testRecordBtn.disabled = !canTest || state.isRecording;
+
+      if (canTest && !state.testRecording) {
+        testDesc.textContent = 'Try a quick 3-second recording to make sure everything works';
+      }
+    }
+
+    // Check microphone
+    async function checkMicrophone() {
+      try {
+        const result = await window.electronAPI.checkMicrophone();
+        if (result.granted) {
+          state.microphone = true;
+          setCompleted(micIcon, micStep);
+          micDesc.textContent = 'Microphone access granted';
+          micDesc.classList.add('success');
+          micBtn.style.display = 'none';
+        } else {
+          micDesc.textContent = 'Allow Whisp to use your microphone for voice recording';
+          micBtn.style.display = 'block';
+        }
+      } catch (err) {
+        micDesc.textContent = 'Allow Whisp to use your microphone for voice recording';
+        micBtn.style.display = 'block';
+      }
+      checkAllComplete();
+    }
+
+    // Check accessibility
+    async function checkAccessibility() {
+      try {
+        const result = await window.electronAPI.checkAccessibility();
+        if (result.granted) {
+          state.accessibility = true;
+          setCompleted(accessIcon, accessStep);
+          accessDesc.textContent = 'Accessibility permission granted';
+          accessDesc.classList.add('success');
+          accessBtn.style.display = 'none';
+        } else {
+          accessDesc.textContent = 'Required for keyboard shortcuts and auto-paste';
+          accessBtn.style.display = 'block';
+        }
+      } catch (err) {
+        accessDesc.textContent = 'Required for keyboard shortcuts and auto-paste';
+        accessBtn.style.display = 'block';
+      }
+      checkAllComplete();
+    }
+
+    // Load existing API key
+    async function loadConfig() {
+      try {
+        const config = await window.electronAPI.getConfig();
+        if (config.apiKey) {
+          apiKeyInput.value = config.apiKey;
+          testApiKey();
+        }
+      } catch (err) {
+        console.error('Failed to load config:', err);
+      }
+    }
+
+    // Test API key
+    async function testApiKey() {
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) {
+        apiDesc.textContent = 'Enter your OpenAI API key above';
+        return;
+      }
+
+      apiTestBtn.disabled = true;
+      apiTestBtn.textContent = '...';
+      apiDesc.textContent = 'Testing API key...';
+
+      try {
+        const result = await window.electronAPI.testApiKey(apiKey);
+        if (result.success) {
+          state.apiKey = true;
+          setCompleted(apiIcon, apiStep);
+          apiDesc.textContent = '🎉 API key valid! Ready to record.';
+          apiDesc.classList.add('success');
+          await window.electronAPI.saveConfig({ apiKey });
+        } else {
+          apiDesc.textContent = result.error || 'Invalid API key. Please check and try again.';
+        }
+      } catch (err) {
+        apiDesc.textContent = 'Failed to test API key. Check your connection.';
+      }
+
+      apiTestBtn.disabled = false;
+      apiTestBtn.textContent = 'Test';
+      checkAllComplete();
+    }
+
+    // Request microphone
+    micBtn.addEventListener('click', async () => {
+      micBtn.disabled = true;
+      micBtn.textContent = '...';
+      try {
+        const result = await window.electronAPI.requestMicrophone();
+        if (result.granted) {
+          state.microphone = true;
+          setCompleted(micIcon, micStep);
+          micDesc.textContent = 'Microphone access granted';
+          micDesc.classList.add('success');
+          micBtn.style.display = 'none';
+        } else {
+          micDesc.textContent = 'Permission denied. Please allow in System Settings.';
+        }
+      } catch (err) {
+        micDesc.textContent = 'Failed to request permission';
+      }
+      micBtn.disabled = false;
+      micBtn.textContent = 'Grant';
+      checkAllComplete();
+    });
+
+    // Request accessibility
+    accessBtn.addEventListener('click', async () => {
+      accessBtn.disabled = true;
+      accessBtn.textContent = '...';
+      try {
+        await window.electronAPI.requestAccessibility();
+        accessDesc.textContent = 'Toggle Whisp ON in System Settings, then return here';
+
+        // Poll for permission
+        const pollInterval = setInterval(async () => {
+          const result = await window.electronAPI.checkAccessibility();
+          if (result.granted) {
+            clearInterval(pollInterval);
+            state.accessibility = true;
+            setCompleted(accessIcon, accessStep);
+            accessDesc.textContent = 'Accessibility permission granted';
+            accessDesc.classList.add('success');
+            accessBtn.style.display = 'none';
+            checkAllComplete();
+          }
+        }, 1000);
+
+        setTimeout(() => clearInterval(pollInterval), 60000);
+      } catch (err) {
+        accessDesc.textContent = 'Failed to request permission';
+      }
+      accessBtn.disabled = false;
+      accessBtn.textContent = 'Grant';
+    });
+
+    // API key events
+    apiTestBtn.addEventListener('click', testApiKey);
+    apiKeyInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') testApiKey();
+    });
+
+    openaiLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      require('electron').shell.openExternal('https://platform.openai.com/api-keys');
+    });
+
+    // Test recording - Start
+    testRecordBtn.addEventListener('click', async () => {
+      if (state.isRecording || state.testRecording) return;
+
+      try {
+        const result = await window.electronAPI.startTestRecording();
+        if (result.success) {
+          state.isRecording = true;
+          testDesc.textContent = 'Speak now, then click Done';
+          testStartRow.style.display = 'none';
+          testRecordingRow.style.display = 'flex';
+          testResult.style.display = 'none';
+        } else {
+          testDesc.textContent = result.error || 'Failed to start recording';
+        }
+      } catch (err) {
+        testDesc.textContent = 'Failed to start recording';
+      }
+    });
+
+    // Test recording - Done
+    testDoneBtn.addEventListener('click', async () => {
+      if (!state.isRecording) return;
+
+      testRecordingRow.style.display = 'none';
+      testTranscribingRow.style.display = 'flex';
+      testDesc.textContent = 'Processing your recording...';
+
+      try {
+        const result = await window.electronAPI.stopTestRecording();
+
+        testTranscribingRow.style.display = 'none';
+
+        if (result.success && result.text) {
+          state.testRecording = true;
+          state.isRecording = false;
+          setCompleted(testIcon, testStep);
+          testDesc.textContent = 'Test successful!';
+          testDesc.classList.add('success');
+          testResult.textContent = `"${result.text}"`;
+          testResult.style.display = 'block';
+          testStartRow.style.display = 'none';
+        } else {
+          state.isRecording = false;
+          testDesc.textContent = result.error || 'No speech detected. Try again?';
+          testStartRow.style.display = 'flex';
+        }
+      } catch (err) {
+        state.isRecording = false;
+        testTranscribingRow.style.display = 'none';
+        testDesc.textContent = 'Recording failed. Try again?';
+        testStartRow.style.display = 'flex';
+      }
+
+      checkAllComplete();
+    });
+
+    // Get Started
+    startBtn.addEventListener('click', async () => {
+      try {
+        await window.electronAPI.completeOnboarding();
+      } catch (err) {
+        console.error('Failed to complete onboarding:', err);
+      }
+    });
+
+    // Initialize
+    checkMicrophone();
+    checkAccessibility();
+    loadConfig();
+  </script>
+</body>
+</html>

@@ -56,7 +56,9 @@ let tray = null;
 let recorderWindow = null;
 let overlayWindow = null;
 let settingsWindow = null;
+let onboardingWindow = null;
 let isRecording = false;
+let isTestRecording = false;
 let escapeRegistered = false;
 
 // ============================================
@@ -76,16 +78,23 @@ function createTrayIcon(state) {
       break;
   }
 
-  const iconPath = path.join(__dirname, 'icons', iconName);
+  // Handle both dev and packaged paths
+  let iconPath = path.join(__dirname, 'icons', iconName);
+
+  // Log for debugging
+  console.log('Loading icon from:', iconPath);
+  console.log('App is packaged:', app.isPackaged);
+
   const image = nativeImage.createFromPath(iconPath);
+
+  if (image.isEmpty()) {
+    console.error('Failed to load icon from:', iconPath);
+    // Return a simple colored icon as fallback
+    return nativeImage.createEmpty();
+  }
 
   // Resize to proper tray size (16x16 logical)
   const resized = image.resize({ width: 16, height: 16 });
-
-  // For idle state, make it a template so it adapts to dark/light menu bar
-  if (state === 'idle') {
-    resized.setTemplateImage(true);
-  }
 
   return resized;
 }
@@ -194,6 +203,33 @@ function createSettingsWindow() {
   });
 }
 
+function createOnboardingWindow() {
+  if (onboardingWindow && !onboardingWindow.isDestroyed()) {
+    onboardingWindow.focus();
+    return;
+  }
+
+  onboardingWindow = new BrowserWindow({
+    width: 420,
+    height: 620,
+    resizable: false,
+    useContentSize: true,
+    minimizable: false,
+    maximizable: false,
+    titleBarStyle: 'hiddenInset',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+    },
+  });
+
+  onboardingWindow.loadFile(path.join(__dirname, 'onboarding.html'));
+
+  onboardingWindow.on('closed', () => {
+    onboardingWindow = null;
+  });
+}
+
 function showOverlay(state, data = {}) {
   if (!overlayWindow || overlayWindow.isDestroyed()) {
     createOverlayWindow();
@@ -217,13 +253,21 @@ function hideOverlay() {
 // ============================================
 
 function createTray() {
-  const icon = createTrayIcon('idle');
-  tray = new Tray(icon);
+  try {
+    console.log('Creating tray...');
+    const icon = createTrayIcon('idle');
+    console.log('Icon created, isEmpty:', icon.isEmpty());
 
-  updateTrayMenu();
-  tray.setToolTip('Whisp');
+    tray = new Tray(icon);
+    console.log('Tray object created');
 
-  console.log('Tray created');
+    updateTrayMenu();
+    tray.setToolTip('Whisp');
+
+    console.log('Tray created successfully');
+  } catch (err) {
+    console.error('Failed to create tray:', err);
+  }
 }
 
 function updateTrayMenu() {
@@ -234,6 +278,10 @@ function updateTrayMenu() {
       click: () => toggleRecording(),
     },
     { type: 'separator' },
+    {
+      label: 'Whisp Intro',
+      click: () => createOnboardingWindow(),
+    },
     {
       label: 'Settings...',
       click: () => createSettingsWindow(),
@@ -425,6 +473,11 @@ ipcMain.handle('test-api-key', async (event, apiKey) => {
 ipcMain.on('transcription-result', (event, text) => {
   console.log('Received transcription:', text);
 
+  // Skip normal processing if this is a test recording from onboarding
+  if (isTestRecording) {
+    return;
+  }
+
   if (text && text.trim()) {
     insertText(text);
   } else {
@@ -439,6 +492,11 @@ ipcMain.on('transcription-result', (event, text) => {
 
 ipcMain.on('transcription-error', (event, error) => {
   console.error('Transcription error:', error);
+
+  // Skip normal processing if this is a test recording from onboarding
+  if (isTestRecording) {
+    return;
+  }
 
   showOverlay('error', { error });
   resetToIdle();
@@ -480,6 +538,116 @@ ipcMain.on('close-settings', () => {
 });
 
 // ============================================
+// Onboarding IPC Handlers
+// ============================================
+
+ipcMain.handle('check-microphone', async () => {
+  try {
+    // On macOS, check if we have microphone permission
+    const status = systemPreferences.getMediaAccessStatus('microphone');
+    return { granted: status === 'granted' };
+  } catch (err) {
+    return { granted: false, error: err.message };
+  }
+});
+
+ipcMain.handle('request-microphone', async () => {
+  try {
+    // Request microphone permission on macOS
+    const granted = await systemPreferences.askForMediaAccess('microphone');
+    return { granted };
+  } catch (err) {
+    return { granted: false, error: err.message };
+  }
+});
+
+ipcMain.handle('check-accessibility', () => {
+  const granted = systemPreferences.isTrustedAccessibilityClient(false);
+  return { granted };
+});
+
+ipcMain.handle('request-accessibility', () => {
+  // This will prompt the user to grant accessibility permission
+  systemPreferences.isTrustedAccessibilityClient(true);
+  return { prompted: true };
+});
+
+// Store test recording promise resolver
+let testRecordingResolver = null;
+
+ipcMain.handle('start-test-recording', async () => {
+  isTestRecording = true;
+
+  // Start recording
+  if (recorderWindow && !recorderWindow.isDestroyed()) {
+    recorderWindow.webContents.send('start-recording');
+    return { success: true };
+  } else {
+    isTestRecording = false;
+    return { success: false, error: 'Recorder not ready' };
+  }
+});
+
+ipcMain.handle('stop-test-recording', async () => {
+  return new Promise((resolve) => {
+    testRecordingResolver = resolve;
+
+    // Set up one-time listener for test recording result
+    const resultHandler = (event, text) => {
+      isTestRecording = false;
+      testRecordingResolver = null;
+      ipcMain.removeListener('transcription-error', errorHandler);
+      resolve({ success: true, text });
+    };
+
+    const errorHandler = (event, error) => {
+      isTestRecording = false;
+      testRecordingResolver = null;
+      ipcMain.removeListener('transcription-result', resultHandler);
+      resolve({ success: false, error });
+    };
+
+    ipcMain.once('transcription-result', resultHandler);
+    ipcMain.once('transcription-error', errorHandler);
+
+    // Stop recording
+    if (recorderWindow && !recorderWindow.isDestroyed()) {
+      recorderWindow.webContents.send('stop-recording');
+    } else {
+      isTestRecording = false;
+      resolve({ success: false, error: 'Recorder not ready' });
+    }
+
+    // Timeout after 30 seconds
+    setTimeout(() => {
+      isTestRecording = false;
+      testRecordingResolver = null;
+      ipcMain.removeListener('transcription-result', resultHandler);
+      ipcMain.removeListener('transcription-error', errorHandler);
+      resolve({ success: false, error: 'Transcription timed out' });
+    }, 30000);
+  });
+});
+
+ipcMain.handle('complete-onboarding', () => {
+  config.onboardingComplete = true;
+  saveConfig(config);
+
+  if (onboardingWindow && !onboardingWindow.isDestroyed()) {
+    onboardingWindow.close();
+  }
+
+  return { success: true };
+});
+
+ipcMain.handle('resize-onboarding', (event, height) => {
+  if (onboardingWindow && !onboardingWindow.isDestroyed()) {
+    const [width] = onboardingWindow.getContentSize();
+    onboardingWindow.setContentSize(width, height, true);
+  }
+});
+
+// ============================================
 // App Lifecycle
 // ============================================
 
@@ -493,8 +661,11 @@ app.whenReady().then(() => {
   createRecorderWindow();
   createTray();
 
-  // Show settings if no API key
-  if (!config.apiKey) {
+  // Show onboarding if not completed, otherwise check for API key
+  if (!config.onboardingComplete) {
+    console.log('Onboarding not complete, showing onboarding');
+    createOnboardingWindow();
+  } else if (!config.apiKey) {
     console.log('No API key configured, showing settings');
     createSettingsWindow();
   } else {
@@ -529,7 +700,9 @@ app.on('window-all-closed', (e) => {
 });
 
 app.on('activate', () => {
-  if (!settingsWindow && !config.apiKey) {
+  if (!config.onboardingComplete) {
+    createOnboardingWindow();
+  } else if (!settingsWindow && !config.apiKey) {
     createSettingsWindow();
   }
 });
