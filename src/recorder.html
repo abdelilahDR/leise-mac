@@ -15,24 +15,33 @@
     let audioContext = null;
     let analyser = null;
     let levelInterval = null;
+    let recordingSessionId = 0;
+    let currentAbortController = null;
 
     // Receive API key from main process
-    window.electronAPI.onSetApiKey((event, key) => {
+    window.electronAPI.onSetApiKey((key) => {
       apiKey = key;
     });
 
     // Receive Groq API key
-    window.electronAPI.onSetGroqApiKey((event, key) => {
+    window.electronAPI.onSetGroqApiKey((key) => {
       groqApiKey = key;
     });
 
     // Receive transcription provider setting
-    window.electronAPI.onSetTranscriptionProvider((event, provider) => {
+    window.electronAPI.onSetTranscriptionProvider((provider) => {
       transcriptionProvider = provider || 'openai';
     });
 
     async function startRecording() {
       cancelled = false;
+      recordingSessionId++;
+
+      // Abort any pending transcription request from previous session
+      if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+      }
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -219,7 +228,8 @@
     }
 
     async function transcribeAudio(audioBlob) {
-      console.log('Starting transcription, blob size:', audioBlob.size);
+      const sessionId = recordingSessionId;  // Capture current session
+      console.log('Starting transcription, blob size:', audioBlob.size, 'session:', sessionId);
       console.log('Provider:', transcriptionProvider);
 
       const useGroq = transcriptionProvider === 'groq';
@@ -232,16 +242,24 @@
 
       if (!primaryKey) {
         console.error('No API key!');
-        window.electronAPI.sendTranscriptionError(`${useGroq ? 'Groq' : 'OpenAI'} API key not configured`);
+        if (sessionId === recordingSessionId) {
+          window.electronAPI.sendTranscriptionError(`${useGroq ? 'Groq' : 'OpenAI'} API key not configured`);
+        }
         return;
       }
 
       // Check if there's actually audio data
       if (audioBlob.size < 1000) {
         console.log('Audio blob too small, skipping');
-        window.electronAPI.sendTranscriptionResult('');
+        if (sessionId === recordingSessionId) {
+          window.electronAPI.sendTranscriptionResult('');
+        }
         return;
       }
+
+      // Create abort controller for this session
+      currentAbortController = new AbortController();
+      const abortController = currentAbortController;
 
       // Helper function to call transcription API
       async function callTranscriptionAPI(provider, key) {
@@ -258,14 +276,14 @@
 
         console.log(`Sending to ${isGroq ? 'Groq' : 'OpenAI'} API, file size:`, audioBlob.size);
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        // Set up timeout
+        const timeoutId = setTimeout(() => abortController.abort(), 60000);
 
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${key}` },
           body: formData,
-          signal: controller.signal
+          signal: abortController.signal
         });
 
         clearTimeout(timeoutId);
@@ -306,9 +324,21 @@
 
         const text = await response.text();
         console.log(`Transcription result (via ${provider}):`, text.trim());
-        window.electronAPI.sendTranscriptionResult(text.trim());
+
+        // Only send result if this is still the current session
+        if (sessionId === recordingSessionId) {
+          window.electronAPI.sendTranscriptionResult(text.trim());
+        } else {
+          console.log('Ignoring stale transcription result from session', sessionId);
+        }
 
       } catch (error) {
+        // Ignore aborted requests (they were cancelled intentionally)
+        if (error.name === 'AbortError' && sessionId !== recordingSessionId) {
+          console.log('Ignoring aborted request from old session', sessionId);
+          return;
+        }
+
         console.error('Transcription failed:', error);
 
         let message = error.message;
@@ -316,7 +346,12 @@
           message = 'Request timed out. Please try again.';
         }
 
-        window.electronAPI.sendTranscriptionError(message);
+        // Only send error if this is still the current session
+        if (sessionId === recordingSessionId) {
+          window.electronAPI.sendTranscriptionError(message);
+        } else {
+          console.log('Ignoring stale transcription error from session', sessionId);
+        }
       }
     }
 

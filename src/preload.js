@@ -8,13 +8,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   testApiKey: (apiKey) => ipcRenderer.invoke('test-api-key', apiKey),
   testGroqApiKey: (apiKey) => ipcRenderer.invoke('test-groq-api-key', apiKey),
 
-  // Recording - receive commands
-  onStartRecording: (callback) => ipcRenderer.on('start-recording', callback),
-  onStopRecording: (callback) => ipcRenderer.on('stop-recording', callback),
-  onCancelRecording: (callback) => ipcRenderer.on('cancel-recording', callback),
-  onSetApiKey: (callback) => ipcRenderer.on('set-api-key', callback),
-  onSetGroqApiKey: (callback) => ipcRenderer.on('set-groq-api-key', callback),
-  onSetTranscriptionProvider: (callback) => ipcRenderer.on('set-transcription-provider', callback),
+  // Recording - receive commands (wrap callbacks for contextBridge compatibility)
+  onStartRecording: (callback) => ipcRenderer.on('start-recording', () => callback()),
+  onStopRecording: (callback) => ipcRenderer.on('stop-recording', () => callback()),
+  onCancelRecording: (callback) => ipcRenderer.on('cancel-recording', () => callback()),
+  onSetApiKey: (callback) => ipcRenderer.on('set-api-key', (_event, value) => callback(value)),
+  onSetGroqApiKey: (callback) => ipcRenderer.on('set-groq-api-key', (_event, value) => callback(value)),
+  onSetTranscriptionProvider: (callback) => ipcRenderer.on('set-transcription-provider', (_event, value) => callback(value)),
 
   // Recording - send results
   sendTranscriptionResult: (text) => ipcRenderer.send('transcription-result', text),
@@ -22,13 +22,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendRecordingStatus: (status) => ipcRenderer.send('recording-status', status),
   sendAudioLevels: (levels) => ipcRenderer.send('audio-levels', levels),
 
-  // Overlay
-  onUpdateOverlay: (callback) => ipcRenderer.on('update-overlay', callback),
-  onAudioLevels: (callback) => ipcRenderer.on('audio-levels', callback),
+  // Overlay (wrap callbacks for contextBridge compatibility)
+  onUpdateOverlay: (callback) => ipcRenderer.on('update-overlay', (_event, data) => callback(data)),
+  onAudioLevels: (callback) => ipcRenderer.on('audio-levels', (_event, levels) => callback(levels)),
   closeOverlay: () => ipcRenderer.send('close-overlay'),
 
   // Settings window
-  onShowSettings: (callback) => ipcRenderer.on('show-settings', callback),
+  onShowSettings: (callback) => ipcRenderer.on('show-settings', () => callback()),
   closeSettings: () => ipcRenderer.send('close-settings'),
 
   // Onboarding - Permission checks

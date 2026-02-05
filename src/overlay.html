@@ -258,12 +258,12 @@
     }
 
     // Listen for state updates
-    window.electronAPI.onUpdateOverlay((event, data) => {
+    window.electronAPI.onUpdateOverlay((data) => {
       showState(data.state, data);
     });
 
     // Listen for audio levels and animate bars
-    window.electronAPI.onAudioLevels((event, levels) => {
+    window.electronAPI.onAudioLevels((levels) => {
       if (Array.isArray(levels) && levels.length === 5) {
         for (let i = 0; i < 5; i++) {
           // Scale level (0-1) to height (4px min, 20px max)

@@ -241,7 +241,7 @@ function createOnboardingWindow() {
 function showOverlay(state, data = {}) {
   if (!overlayWindow || overlayWindow.isDestroyed()) {
     createOverlayWindow();
-    overlayWindow.webContents.on('did-finish-load', () => {
+    overlayWindow.webContents.once('did-finish-load', () => {
       overlayWindow.webContents.send('update-overlay', { state, ...data });
     });
   } else {
