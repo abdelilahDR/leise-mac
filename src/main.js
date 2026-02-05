@@ -13,6 +13,21 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { exec } = require('child_process');
+
+// ============================================
+// Sound Feedback
+// ============================================
+
+function playSound(soundName) {
+  // Play macOS system sounds (non-blocking)
+  const soundPath = `/System/Library/Sounds/${soundName}.aiff`;
+  exec(`afplay "${soundPath}"`, (error) => {
+    if (error) {
+      console.log('Sound playback failed:', error.message);
+    }
+  });
+}
 
 // ============================================
 // Configuration Management
@@ -60,6 +75,7 @@ let onboardingWindow = null;
 let isRecording = false;
 let isTestRecording = false;
 let escapeRegistered = false;
+let enterRegistered = false;
 let overlayHideTimer = null;
 
 // ============================================
@@ -347,6 +363,7 @@ function startRecording() {
   isRecording = true;
   updateTrayIcon('recording');
   updateTrayMenu();
+  playSound('Pop'); // Audio feedback for recording start
 
   // Show overlay
   showOverlay('recording');
@@ -359,6 +376,14 @@ function startRecording() {
     escapeRegistered = true;
   }
 
+  // Register Enter key to stop and process
+  if (!enterRegistered) {
+    globalShortcut.register('Return', () => {
+      stopRecording();
+    });
+    enterRegistered = true;
+  }
+
   // Start recording in recorder window
   recorderWindow.webContents.send('start-recording');
 }
@@ -369,6 +394,7 @@ function stopRecording() {
   isRecording = false;
   updateTrayIcon('transcribing');
   updateTrayMenu();
+  playSound('Tink'); // Audio feedback for recording stop
 
   // Update overlay
   showOverlay('transcribing');
@@ -377,6 +403,12 @@ function stopRecording() {
   if (escapeRegistered) {
     globalShortcut.unregister('Escape');
     escapeRegistered = false;
+  }
+
+  // Unregister Enter key
+  if (enterRegistered) {
+    globalShortcut.unregister('Return');
+    enterRegistered = false;
   }
 
   // Stop recording in recorder window
@@ -398,6 +430,11 @@ function cancelRecording() {
     escapeRegistered = false;
   }
 
+  if (enterRegistered) {
+    globalShortcut.unregister('Return');
+    enterRegistered = false;
+  }
+
   recorderWindow.webContents.send('cancel-recording');
   hideOverlay();
 }
@@ -410,6 +447,11 @@ function resetToIdle() {
   if (escapeRegistered) {
     globalShortcut.unregister('Escape');
     escapeRegistered = false;
+  }
+
+  if (enterRegistered) {
+    globalShortcut.unregister('Return');
+    enterRegistered = false;
   }
 }
 
