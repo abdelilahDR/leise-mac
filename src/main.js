@@ -60,6 +60,7 @@ let onboardingWindow = null;
 let isRecording = false;
 let isTestRecording = false;
 let escapeRegistered = false;
+let overlayHideTimer = null;
 
 // ============================================
 // Icon Creation (Using PNG for better macOS support)
@@ -256,6 +257,18 @@ function hideOverlay() {
   }
 }
 
+function scheduleOverlayHide(delay) {
+  // Clear any existing timer first
+  if (overlayHideTimer) {
+    clearTimeout(overlayHideTimer);
+  }
+  overlayHideTimer = setTimeout(() => {
+    hideOverlay();
+    resetToIdle();
+    overlayHideTimer = null;
+  }, delay);
+}
+
 // ============================================
 // Tray Menu
 // ============================================
@@ -314,6 +327,12 @@ function toggleRecording() {
 
 function startRecording() {
   if (isRecording) return;
+
+  // Clear any pending overlay hide timer from previous success/error state
+  if (overlayHideTimer) {
+    clearTimeout(overlayHideTimer);
+    overlayHideTimer = null;
+  }
 
   // Check for API key
   if (!config.apiKey) {
@@ -409,6 +428,11 @@ function insertText(text) {
   setTimeout(() => {
     const script = `tell application "System Events" to keystroke "v" using command down`;
     exec(`osascript -e '${script}'`, (error) => {
+      // Don't show success overlay if user already started new recording
+      if (isRecording) {
+        return;
+      }
+
       if (error) {
         console.error('Failed to paste via AppleScript:', error.message);
         showOverlay('success', { text: 'Copied! Press Cmd+V to paste' });
@@ -416,10 +440,7 @@ function insertText(text) {
         showOverlay('success', { text });
       }
 
-      setTimeout(() => {
-        hideOverlay();
-        resetToIdle();
-      }, 3000);
+      scheduleOverlayHide(3000);
     });
   }, 100);
 }
@@ -492,10 +513,7 @@ ipcMain.on('transcription-result', (event, text) => {
     insertText(text);
   } else {
     showOverlay('error', { error: 'No speech detected' });
-    setTimeout(() => {
-      hideOverlay();
-      resetToIdle();
-    }, 2000);
+    scheduleOverlayHide(2000);
   }
 });
 

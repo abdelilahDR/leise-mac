@@ -5,43 +5,108 @@
 </head>
 <body>
   <script>
-    let mediaRecorder = null;
-    let audioChunks = [];
-    let currentStream = null;
+    // ============================================
+    // State Variables
+    // ============================================
     let apiKey = '';
     let groqApiKey = '';
-    let transcriptionProvider = 'openai'; // 'openai' or 'groq'
-    let cancelled = false;
-    let audioContext = null;
-    let analyser = null;
-    let levelInterval = null;
+    let transcriptionProvider = 'openai';
     let recordingSessionId = 0;
     let currentAbortController = null;
 
-    // Receive API key from main process
+    // Shared AudioContext (reused to prevent accumulation)
+    let sharedAudioContext = null;
+
+    // Current recording state (isolated per session)
+    let currentRecording = null;
+
+    // ============================================
+    // AudioContext Management
+    // ============================================
+    function getAudioContext() {
+      if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
+        sharedAudioContext = new AudioContext();
+      }
+      // CRITICAL: Resume if suspended (browsers suspend inactive contexts)
+      if (sharedAudioContext.state === 'suspended') {
+        sharedAudioContext.resume();
+      }
+      return sharedAudioContext;
+    }
+
+    // ============================================
+    // Recording Cleanup
+    // ============================================
+    function cleanupCurrentRecording() {
+      if (!currentRecording) return;
+
+      // Stop level monitoring
+      if (currentRecording.levelInterval) {
+        clearInterval(currentRecording.levelInterval);
+      }
+
+      // Disconnect audio graph nodes (prevents accumulation)
+      if (currentRecording.source) {
+        try {
+          currentRecording.source.disconnect();
+        } catch (e) {
+          // Already disconnected, ignore
+        }
+      }
+
+      // Stop MediaRecorder if still active
+      if (currentRecording.mediaRecorder && currentRecording.mediaRecorder.state !== 'inactive') {
+        try {
+          currentRecording.mediaRecorder.stop();
+        } catch (e) {
+          // Already stopped, ignore
+        }
+      }
+
+      // Stop stream tracks
+      if (currentRecording.stream) {
+        currentRecording.stream.getTracks().forEach(track => {
+          try {
+            track.stop();
+          } catch (e) {
+            // Already stopped, ignore
+          }
+        });
+      }
+
+      currentRecording = null;
+    }
+
+    // ============================================
+    // IPC Handlers
+    // ============================================
     window.electronAPI.onSetApiKey((key) => {
       apiKey = key;
     });
 
-    // Receive Groq API key
     window.electronAPI.onSetGroqApiKey((key) => {
       groqApiKey = key;
     });
 
-    // Receive transcription provider setting
     window.electronAPI.onSetTranscriptionProvider((provider) => {
       transcriptionProvider = provider || 'openai';
     });
 
+    // ============================================
+    // Recording Functions
+    // ============================================
     async function startRecording() {
-      cancelled = false;
-      recordingSessionId++;
+      // Increment session ID FIRST
+      const mySessionId = ++recordingSessionId;
 
-      // Abort any pending transcription request from previous session
+      // Abort any pending transcription from previous session
       if (currentAbortController) {
         currentAbortController.abort();
         currentAbortController = null;
       }
+
+      // Clean up any previous recording BEFORE starting new one
+      cleanupCurrentRecording();
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -51,11 +116,17 @@
           }
         });
 
-        currentStream = stream;
+        // Check if we were superseded while waiting for mic
+        if (mySessionId !== recordingSessionId) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
 
-        // Set up Web Audio API for audio level visualization
-        audioContext = new AudioContext();
-        analyser = audioContext.createAnalyser();
+        // Get/resume AudioContext
+        const audioContext = getAudioContext();
+
+        // Set up audio analysis
+        const analyser = audioContext.createAnalyser();
         const source = audioContext.createMediaStreamSource(stream);
         source.connect(analyser);
         analyser.fftSize = 256;
@@ -64,11 +135,35 @@
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
 
-        // Send audio levels to main process for waveform visualization
-        levelInterval = setInterval(() => {
+        // Create MediaRecorder
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'audio/webm;codecs=opus'
+        });
+
+        // This session's audio chunks (isolated from other sessions)
+        const audioChunks = [];
+
+        // Store current recording state
+        currentRecording = {
+          sessionId: mySessionId,
+          stream: stream,
+          mediaRecorder: mediaRecorder,
+          source: source,
+          analyser: analyser,
+          audioChunks: audioChunks,
+          levelInterval: null,
+          cancelled: false
+        };
+
+        // Level monitoring (send to main for waveform)
+        currentRecording.levelInterval = setInterval(() => {
+          // Check if this recording is still current
+          if (!currentRecording || currentRecording.sessionId !== mySessionId) {
+            return;
+          }
+
           analyser.getByteFrequencyData(dataArray);
 
-          // Get 5 frequency bands for the bars
           const bandSize = Math.floor(bufferLength / 5);
           const levels = [];
           for (let i = 0; i < 5; i++) {
@@ -78,157 +173,101 @@
             for (let j = start; j < end; j++) {
               sum += dataArray[j];
             }
-            // Normalize to 0-1 range
             levels.push(sum / (bandSize * 255));
           }
 
           window.electronAPI.sendAudioLevels(levels);
-        }, 50); // ~20fps for smooth animation
+        }, 50);
 
-        mediaRecorder = new MediaRecorder(stream, {
-          mimeType: 'audio/webm;codecs=opus'
-        });
-
-        audioChunks = [];
-
+        // Collect audio data
         mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
+          // Only add chunks if this is still the current session
+          if (currentRecording && currentRecording.sessionId === mySessionId && event.data.size > 0) {
             audioChunks.push(event.data);
           }
         };
 
+        // Handle recording stop
         mediaRecorder.onstop = async () => {
-          console.log('MediaRecorder stopped, chunks:', audioChunks.length);
-          // Stop all tracks
-          if (currentStream) {
-            currentStream.getTracks().forEach(track => track.stop());
-            currentStream = null;
+          // CRITICAL: Check if this onstop belongs to current session
+          if (!currentRecording || currentRecording.sessionId !== mySessionId) {
+            console.log('Ignoring onstop from stale session', mySessionId);
+            return;
           }
 
-          // Don't transcribe if cancelled
-          if (cancelled) {
+          // Check if cancelled
+          if (currentRecording.cancelled) {
             console.log('Recording was cancelled, not transcribing');
             return;
           }
 
-          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-          console.log('Created audio blob, size:', audioBlob.size);
-          await transcribeAudio(audioBlob);
+          // Capture chunks immediately (before any async work)
+          const chunksToProcess = [...audioChunks];
+
+          // Stop stream tracks (this recording's stream only)
+          stream.getTracks().forEach(track => track.stop());
+
+          // Create blob from this session's chunks only
+          const audioBlob = new Blob(chunksToProcess, { type: 'audio/webm' });
+          console.log('Created audio blob, size:', audioBlob.size, 'chunks:', chunksToProcess.length, 'session:', mySessionId);
+
+          // Transcribe
+          await transcribeAudio(audioBlob, mySessionId);
         };
 
-        mediaRecorder.start(100); // Collect data every 100ms
-        console.log('MediaRecorder started');
+        // Start recording with 100ms timeslice
+        mediaRecorder.start(100);
+        console.log('MediaRecorder started, session:', mySessionId);
         window.electronAPI.sendRecordingStatus('started');
 
       } catch (error) {
         console.error('Failed to start recording:', error);
-        window.electronAPI.sendTranscriptionError(`Microphone access denied: ${error.message}`);
+        if (mySessionId === recordingSessionId) {
+          window.electronAPI.sendTranscriptionError(`Microphone access denied: ${error.message}`);
+        }
       }
     }
 
     function stopRecording() {
-      // Stop audio level monitoring
-      if (levelInterval) {
-        clearInterval(levelInterval);
-        levelInterval = null;
-      }
-      if (audioContext) {
-        audioContext.close();
-        audioContext = null;
+      if (!currentRecording) return;
+
+      // Stop level monitoring
+      if (currentRecording.levelInterval) {
+        clearInterval(currentRecording.levelInterval);
+        currentRecording.levelInterval = null;
       }
 
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+      // Disconnect audio source (prevents accumulation)
+      if (currentRecording.source) {
+        try {
+          currentRecording.source.disconnect();
+        } catch (e) {}
+        currentRecording.source = null;
+      }
+
+      // Stop MediaRecorder (triggers onstop which handles transcription)
+      if (currentRecording.mediaRecorder && currentRecording.mediaRecorder.state !== 'inactive') {
+        currentRecording.mediaRecorder.stop();
         window.electronAPI.sendRecordingStatus('stopped');
       }
     }
 
-    // Convert audio blob to WAV format for better API compatibility
-    async function convertToWav(audioBlob) {
-      const arrayBuffer = await audioBlob.arrayBuffer();
-      const audioCtx = new AudioContext();
-
-      try {
-        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-
-        // Get audio data
-        const numberOfChannels = audioBuffer.numberOfChannels;
-        const sampleRate = audioBuffer.sampleRate;
-        const length = audioBuffer.length;
-
-        // Create WAV file
-        const wavBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
-        const view = new DataView(wavBuffer);
-
-        // WAV header
-        const writeString = (offset, string) => {
-          for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
-          }
-        };
-
-        writeString(0, 'RIFF');
-        view.setUint32(4, 36 + length * numberOfChannels * 2, true);
-        writeString(8, 'WAVE');
-        writeString(12, 'fmt ');
-        view.setUint32(16, 16, true); // PCM format chunk size
-        view.setUint16(20, 1, true); // Audio format (PCM)
-        view.setUint16(22, numberOfChannels, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * numberOfChannels * 2, true); // Byte rate
-        view.setUint16(32, numberOfChannels * 2, true); // Block align
-        view.setUint16(34, 16, true); // Bits per sample
-        writeString(36, 'data');
-        view.setUint32(40, length * numberOfChannels * 2, true);
-
-        // Write audio data
-        const offset = 44;
-        for (let i = 0; i < length; i++) {
-          for (let channel = 0; channel < numberOfChannels; channel++) {
-            const sample = audioBuffer.getChannelData(channel)[i];
-            // Convert float [-1, 1] to 16-bit PCM
-            const intSample = Math.max(-1, Math.min(1, sample)) * 0x7FFF;
-            view.setInt16(offset + (i * numberOfChannels + channel) * 2, intSample, true);
-          }
-        }
-
-        audioCtx.close();
-        return new Blob([wavBuffer], { type: 'audio/wav' });
-      } catch (error) {
-        console.error('WAV conversion failed:', error);
-        audioCtx.close();
-        throw error;
-      }
-    }
-
     function cancelRecording() {
-      cancelled = true;
+      if (!currentRecording) return;
 
-      // Stop audio level monitoring
-      if (levelInterval) {
-        clearInterval(levelInterval);
-        levelInterval = null;
-      }
-      if (audioContext) {
-        audioContext.close();
-        audioContext = null;
-      }
+      // Mark as cancelled so onstop knows not to transcribe
+      currentRecording.cancelled = true;
 
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-      }
+      // Clean up everything
+      cleanupCurrentRecording();
 
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-        currentStream = null;
-      }
-
-      audioChunks = [];
       window.electronAPI.sendRecordingStatus('cancelled');
     }
 
-    async function transcribeAudio(audioBlob) {
-      const sessionId = recordingSessionId;  // Capture current session
+    // ============================================
+    // Transcription
+    // ============================================
+    async function transcribeAudio(audioBlob, sessionId) {
       console.log('Starting transcription, blob size:', audioBlob.size, 'session:', sessionId);
       console.log('Provider:', transcriptionProvider);
 
@@ -240,6 +279,7 @@
       console.log('API key available:', primaryKey ? 'YES' : 'NO');
       console.log('Fallback available:', hasFallback ? 'YES' : 'NO');
 
+      // Validate API key
       if (!primaryKey) {
         console.error('No API key!');
         if (sessionId === recordingSessionId) {
@@ -248,7 +288,7 @@
         return;
       }
 
-      // Check if there's actually audio data
+      // Validate audio size (minimum ~1KB for meaningful audio)
       if (audioBlob.size < 1000) {
         console.log('Audio blob too small, skipping');
         if (sessionId === recordingSessionId) {
@@ -257,11 +297,11 @@
         return;
       }
 
-      // Create abort controller for this session
+      // Create abort controller for this transcription
       currentAbortController = new AbortController();
       const abortController = currentAbortController;
 
-      // Helper function to call transcription API
+      // Helper to call API
       async function callTranscriptionAPI(provider, key) {
         const isGroq = provider === 'groq';
         const formData = new FormData();
@@ -276,7 +316,6 @@
 
         console.log(`Sending to ${isGroq ? 'Groq' : 'OpenAI'} API, file size:`, audioBlob.size);
 
-        // Set up timeout
         const timeoutId = setTimeout(() => abortController.abort(), 60000);
 
         const response = await fetch(endpoint, {
@@ -297,9 +336,9 @@
         const primaryProvider = useGroq ? 'groq' : 'openai';
         let { response, provider } = await callTranscriptionAPI(primaryProvider, primaryKey);
 
-        // Check if we should fallback (429 rate limit or 5xx server error)
+        // Fallback on rate limit or server error
         if (!response.ok && hasFallback && (response.status === 429 || response.status >= 500)) {
-          console.log(`${provider} failed with ${response.status}, falling back to ${useGroq ? 'OpenAI' : 'Groq'}...`);
+          console.log(`${provider} failed with ${response.status}, falling back...`);
           const fallbackProvider = useGroq ? 'openai' : 'groq';
           const fallbackResult = await callTranscriptionAPI(fallbackProvider, fallbackKey);
           response = fallbackResult.response;
@@ -325,15 +364,15 @@
         const text = await response.text();
         console.log(`Transcription result (via ${provider}):`, text.trim());
 
-        // Only send result if this is still the current session
+        // Only send if still current session
         if (sessionId === recordingSessionId) {
           window.electronAPI.sendTranscriptionResult(text.trim());
         } else {
-          console.log('Ignoring stale transcription result from session', sessionId);
+          console.log('Ignoring stale result from session', sessionId);
         }
 
       } catch (error) {
-        // Ignore aborted requests (they were cancelled intentionally)
+        // Ignore aborted requests from old sessions
         if (error.name === 'AbortError' && sessionId !== recordingSessionId) {
           console.log('Ignoring aborted request from old session', sessionId);
           return;
@@ -346,16 +385,18 @@
           message = 'Request timed out. Please try again.';
         }
 
-        // Only send error if this is still the current session
+        // Only send error if still current session
         if (sessionId === recordingSessionId) {
           window.electronAPI.sendTranscriptionError(message);
         } else {
-          console.log('Ignoring stale transcription error from session', sessionId);
+          console.log('Ignoring stale error from session', sessionId);
         }
       }
     }
 
-    // Listen for IPC messages
+    // ============================================
+    // IPC Message Listeners
+    // ============================================
     window.electronAPI.onStartRecording(() => {
       startRecording();
     });
