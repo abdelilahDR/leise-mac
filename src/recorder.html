@@ -5,6 +5,16 @@
 </head>
 <body>
   <script>
+    console.log('recorder.html script loaded at', new Date().toISOString());
+
+    // Surface any silent renderer crashes / promise rejections.
+    window.addEventListener('error', (e) => {
+      console.error('window.error:', e.message, '@', e.filename + ':' + e.lineno);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      console.error('unhandledrejection:', (e.reason && e.reason.message) || String(e.reason));
+    });
+
     // ============================================
     // State Variables
     // ============================================
@@ -307,17 +317,22 @@
         const formData = new FormData();
         const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
         formData.append('file', audioFile);
-        formData.append('model', isGroq ? 'whisper-large-v3' : 'whisper-1');
+        formData.append('model', isGroq ? 'whisper-large-v3-turbo' : 'whisper-1');
         formData.append('response_format', 'text');
 
         const endpoint = isGroq
           ? 'https://api.groq.com/openai/v1/audio/transcriptions'
           : 'https://api.openai.com/v1/audio/transcriptions';
 
-        console.log(`Sending to ${isGroq ? 'Groq' : 'OpenAI'} API, file size:`, audioBlob.size);
+        const TIMEOUT_MS = 10000; // 10s — short clips should return in 1-3s; anything longer is a hang
+        console.log(`fetch START ${isGroq ? 'Groq' : 'OpenAI'} endpoint=${endpoint} blob=${audioBlob.size} timeout=${TIMEOUT_MS}ms key.len=${(key || '').length}`);
 
-        const timeoutId = setTimeout(() => abortController.abort(), 60000);
+        const timeoutId = setTimeout(() => {
+          console.warn(`fetch TIMEOUT after ${TIMEOUT_MS}ms — aborting`);
+          abortController.abort();
+        }, TIMEOUT_MS);
 
+        const fetchStart = Date.now();
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${key}` },
@@ -326,7 +341,7 @@
         });
 
         clearTimeout(timeoutId);
-        console.log('API response status:', response.status);
+        console.log(`fetch DONE status=${response.status} elapsed=${Date.now() - fetchStart}ms`);
 
         return { response, provider: isGroq ? 'Groq' : 'OpenAI' };
       }
@@ -407,6 +422,13 @@
 
     window.electronAPI.onCancelRecording(() => {
       cancelRecording();
+    });
+
+    window.electronAPI.onAbortTranscription(() => {
+      if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+      }
     });
   </script>
 </body>

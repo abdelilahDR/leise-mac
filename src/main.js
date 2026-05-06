@@ -16,6 +16,16 @@ const fs = require('fs');
 const { exec } = require('child_process');
 
 // ============================================
+// Startup banner — if you do NOT see this on `npm start`, you are running the
+// wrong directory or the installed app is intercepting things.
+// ============================================
+console.log('═══════════════════════════════════════════════');
+console.log('  Whisp DEV — diagnostic build  ' + new Date().toISOString());
+console.log('  cwd:', process.cwd());
+console.log('  __dirname:', __dirname);
+console.log('═══════════════════════════════════════════════');
+
+// ============================================
 // Sound Feedback
 // ============================================
 
@@ -34,6 +44,8 @@ function playSound(soundName) {
 // ============================================
 
 const configPath = path.join(app.getPath('userData'), 'config.json');
+const historyPath = path.join(app.getPath('userData'), 'history.json');
+const HISTORY_MAX = 20;
 
 function loadConfig() {
   try {
@@ -61,6 +73,51 @@ function saveConfig(newConfig) {
   }
 }
 
+function loadHistory() {
+  try {
+    if (fs.existsSync(historyPath)) {
+      const data = fs.readFileSync(historyPath, 'utf8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (err) {
+    console.error('Failed to load history:', err);
+  }
+  return [];
+}
+
+function saveHistory(history) {
+  try {
+    const dir = path.dirname(historyPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
+    return true;
+  } catch (err) {
+    console.error('Failed to save history:', err);
+    return false;
+  }
+}
+
+function appendToHistory(text, source) {
+  const trimmed = text && text.trim();
+  if (!trimmed) return;
+  const history = loadHistory();
+  history.unshift({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    text: trimmed,
+    timestamp: Date.now(),
+    source,
+  });
+  if (history.length > HISTORY_MAX) history.length = HISTORY_MAX;
+  saveHistory(history);
+}
+
+function clearHistory() {
+  saveHistory([]);
+}
+
 let config = loadConfig();
 
 // ============================================
@@ -77,6 +134,8 @@ let isTestRecording = false;
 let escapeRegistered = false;
 let enterRegistered = false;
 let overlayHideTimer = null;
+let wasCancelled = false;
+let userDismissed = false;
 
 // ============================================
 // Icon Creation (Using PNG for better macOS support)
@@ -116,6 +175,32 @@ function createTrayIcon(state) {
 // Windows
 // ============================================
 
+function forwardRendererConsole(name, win) {
+  // Electron 28+ uses a single event object: event.message, event.level.
+  // Older Electron used positional args (event, level, message, line, sourceId).
+  // Handle both for safety.
+  win.webContents.on('console-message', (...args) => {
+    let message = '(empty)';
+    let level = '?';
+    if (args.length >= 1 && args[0] && typeof args[0].message === 'string') {
+      message = args[0].message;
+      level = args[0].level !== undefined ? String(args[0].level) : '?';
+    } else if (args.length >= 3) {
+      level = args[1];
+      message = args[2];
+    }
+    console.log(`[${name}:${level}] ${message}`);
+  });
+
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[${name}] did-fail-load`, errorCode, errorDescription, validatedURL);
+  });
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[${name}] render-process-gone`, details);
+  });
+}
+
 function createRecorderWindow() {
   recorderWindow = new BrowserWindow({
     width: 1,
@@ -128,6 +213,7 @@ function createRecorderWindow() {
     },
   });
 
+  forwardRendererConsole('recorder', recorderWindow);
   recorderWindow.loadFile(path.join(__dirname, 'recorder.html'));
 
   recorderWindow.webContents.on('did-finish-load', () => {
@@ -178,14 +264,15 @@ function createOverlayWindow() {
     resizable: false,
     movable: true,
     hasShadow: true,
-    focusable: false,
     type: 'panel', // macOS: doesn't activate app when shown
+    // focusable: true (default) — required for click events to fire on macOS
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
     },
   });
 
+  forwardRendererConsole('overlay', overlayWindow);
   overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
   overlayWindow.setVisibleOnAllWorkspaces(true);
 
@@ -300,12 +387,66 @@ function createTray() {
   }
 }
 
+function formatRelativeTime(timestamp) {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function buildHistorySubmenu() {
+  const history = loadHistory();
+  if (history.length === 0) {
+    return [{ label: 'No recent transcriptions', enabled: false }];
+  }
+
+  const items = history.map((entry) => {
+    const preview = entry.text.length > 40 ? entry.text.slice(0, 40) + '…' : entry.text;
+    const tag = entry.source === 'cancelled' ? '↩' : '✓';
+    return {
+      label: `${tag} ${preview}  ·  ${formatRelativeTime(entry.timestamp)}`,
+      click: () => copyHistoryEntry(entry.id),
+    };
+  });
+
+  items.push({ type: 'separator' });
+  items.push({
+    label: 'Clear History',
+    click: () => {
+      clearHistory();
+      updateTrayMenu();
+    },
+  });
+
+  return items;
+}
+
+function copyHistoryEntry(id) {
+  const history = loadHistory();
+  const entry = history.find((e) => e.id === id);
+  if (!entry) return;
+  clipboard.writeText(entry.text);
+  new Notification({
+    title: 'Whisp',
+    body: 'Copied to clipboard',
+  }).show();
+}
+
 function updateTrayMenu() {
   const contextMenu = Menu.buildFromTemplate([
     {
       label: isRecording ? 'Stop Recording' : 'Start Recording',
       accelerator: 'Ctrl+Space',
       click: () => toggleRecording(),
+    },
+    { type: 'separator' },
+    {
+      label: 'Recent Transcriptions',
+      submenu: buildHistorySubmenu(),
     },
     { type: 'separator' },
     {
@@ -342,6 +483,7 @@ function toggleRecording() {
 }
 
 function startRecording() {
+  console.log('[main] startRecording called, isRecording=', isRecording);
   if (isRecording) return;
 
   // Clear any pending overlay hide timer from previous success/error state
@@ -389,15 +531,25 @@ function startRecording() {
 }
 
 function stopRecording() {
+  console.log('[main] stopRecording called, isRecording=', isRecording, 'wasCancelled=', wasCancelled);
   if (!isRecording) return;
 
   isRecording = false;
-  updateTrayIcon('transcribing');
+  updateTrayIcon(wasCancelled ? 'idle' : 'transcribing');
   updateTrayMenu();
   playSound('Tink'); // Audio feedback for recording stop
 
-  // Update overlay
-  showOverlay('transcribing');
+  // Update overlay — when cancelled, hide immediately. Transcription still
+  // runs in the background and the result lands silently in tray history.
+  if (wasCancelled) {
+    if (overlayHideTimer) {
+      clearTimeout(overlayHideTimer);
+      overlayHideTimer = null;
+    }
+    hideOverlay();
+  } else {
+    showOverlay('transcribing');
+  }
 
   // Unregister Escape key
   if (escapeRegistered) {
@@ -416,27 +568,16 @@ function stopRecording() {
 }
 
 function cancelRecording() {
+  console.log('[main] cancelRecording called, isRecording=', isRecording);
   if (!isRecording) {
     hideOverlay();
     return;
   }
 
-  isRecording = false;
-  updateTrayIcon('idle');
-  updateTrayMenu();
-
-  if (escapeRegistered) {
-    globalShortcut.unregister('Escape');
-    escapeRegistered = false;
-  }
-
-  if (enterRegistered) {
-    globalShortcut.unregister('Return');
-    enterRegistered = false;
-  }
-
-  recorderWindow.webContents.send('cancel-recording');
-  hideOverlay();
+  // Mark as cancelled, then run the normal stop path so the audio still
+  // gets transcribed. The result handler routes to history instead of pasting.
+  wasCancelled = true;
+  stopRecording();
 }
 
 function resetToIdle() {
@@ -546,24 +687,67 @@ ipcMain.handle('test-groq-api-key', async (event, apiKey) => {
 });
 
 ipcMain.on('transcription-result', (event, text) => {
+  console.log('[main] transcription-result received, length=', (text || '').length, 'wasCancelled=', wasCancelled, 'userDismissed=', userDismissed);
+
   // Skip normal processing if this is a test recording from onboarding
   if (isTestRecording) {
     return;
   }
 
-  if (text && text.trim()) {
-    insertText(text);
-  } else {
+  // User clicked ✕ to dismiss while transcribing — drop the result silently.
+  if (userDismissed) {
+    userDismissed = false;
+    wasCancelled = false;
+    return;
+  }
+
+  const trimmed = text && text.trim();
+
+  if (!trimmed) {
+    // Empty result. If the user cancelled, stay silent — they don't care.
+    if (wasCancelled) {
+      wasCancelled = false;
+      updateTrayIcon('idle');
+      return;
+    }
     showOverlay('error', { error: 'No speech detected' });
     scheduleOverlayHide(2000);
+    return;
   }
+
+  if (wasCancelled) {
+    // Silent cancel: write to history, keep the tray idle, no overlay flash.
+    appendToHistory(trimmed, 'cancelled');
+    updateTrayMenu();
+    wasCancelled = false;
+    updateTrayIcon('idle');
+    return;
+  }
+
+  appendToHistory(trimmed, 'inserted');
+  updateTrayMenu();
+  insertText(trimmed);
 });
 
 ipcMain.on('transcription-error', (event, error) => {
-  console.error('Transcription error:', error);
+  console.error('[main] transcription-error received:', error, 'wasCancelled=', wasCancelled, 'userDismissed=', userDismissed);
 
   // Skip normal processing if this is a test recording from onboarding
   if (isTestRecording) {
+    return;
+  }
+
+  // User clicked ✕ to dismiss — likely an AbortError we triggered. Stay quiet.
+  if (userDismissed) {
+    userDismissed = false;
+    wasCancelled = false;
+    return;
+  }
+
+  // Cancelled (Escape) recordings should also stay silent on errors.
+  if (wasCancelled) {
+    wasCancelled = false;
+    resetToIdle();
     return;
   }
 
@@ -581,7 +765,7 @@ ipcMain.on('transcription-error', (event, error) => {
 });
 
 ipcMain.on('recording-status', (event, status) => {
-  // Status received from recorder (started, stopped, cancelled)
+  console.log('[main] recording-status:', status);
 });
 
 ipcMain.on('audio-levels', (event, levels) => {
@@ -591,13 +775,26 @@ ipcMain.on('audio-levels', (event, levels) => {
 });
 
 ipcMain.on('close-overlay', () => {
-  // If recording, cancel it; otherwise just hide overlay
+  console.log('[main] close-overlay received, isRecording=', isRecording);
   if (isRecording) {
+    // Recording → existing cancel-with-history flow
     cancelRecording();
-  } else {
-    hideOverlay();
-    resetToIdle();
+    return;
   }
+
+  // Not recording: either transcribing, or showing success/saved/error.
+  // Mark as dismissed so any in-flight transcription result/error is ignored,
+  // then ask the recorder to abort the request if one is running.
+  userDismissed = true;
+  if (recorderWindow && !recorderWindow.isDestroyed()) {
+    recorderWindow.webContents.send('abort-transcription');
+  }
+  if (overlayHideTimer) {
+    clearTimeout(overlayHideTimer);
+    overlayHideTimer = null;
+  }
+  hideOverlay();
+  resetToIdle();
 });
 
 ipcMain.on('close-settings', () => {

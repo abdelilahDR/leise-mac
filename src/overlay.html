@@ -12,6 +12,7 @@
     }
 
     .overlay {
+      position: relative;
       background: rgba(30, 30, 30, 0.95);
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
@@ -26,6 +27,33 @@
       cursor: grab;
       user-select: none;
       -webkit-app-region: drag;
+    }
+
+    .close-btn {
+      position: absolute;
+      top: 6px;
+      right: 8px;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-app-region: no-drag;
+      z-index: 10;
+    }
+
+    .close-btn:hover {
+      background: rgba(255, 59, 48, 0.85);
+      color: #fff;
     }
 
     .main-row {
@@ -143,6 +171,7 @@
 </head>
 <body>
   <div class="overlay">
+    <button type="button" class="close-btn" id="closeBtn" aria-label="Close">×</button>
     <!-- Recording state -->
     <div id="recordingState">
       <div class="main-row">
@@ -242,13 +271,14 @@
           transcribingState.classList.remove('hidden');
           stopTimer();
           break;
-        case 'success':
+        case 'success': {
           successState.classList.remove('hidden');
           const text = data.text || '';
           // Show up to 150 chars (fits ~3 lines) with quotes
           successText.textContent = text.length > 150 ? '"' + text.substring(0, 150) + '..."' : '"' + text + '"';
           stopTimer();
           break;
+        }
         case 'error':
           errorState.classList.remove('hidden');
           errorText.textContent = data.error || 'An error occurred';
@@ -273,8 +303,12 @@
       }
     });
 
-    // Click on overlay to dismiss (for success/error states)
-    document.querySelector('.overlay').addEventListener('click', () => {
+    // ✕ button — dismiss the overlay regardless of state. The .overlay div is
+    // a drag region, which swallows clicks on macOS, so we need an explicit
+    // no-drag button to hand off click events to the main process.
+    document.getElementById('closeBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      console.log('close button clicked');
       window.electronAPI.closeOverlay();
     });
 

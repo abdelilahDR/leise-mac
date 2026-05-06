@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onStartRecording: (callback) => ipcRenderer.on('start-recording', () => callback()),
   onStopRecording: (callback) => ipcRenderer.on('stop-recording', () => callback()),
   onCancelRecording: (callback) => ipcRenderer.on('cancel-recording', () => callback()),
+  onAbortTranscription: (callback) => ipcRenderer.on('abort-transcription', () => callback()),
   onSetApiKey: (callback) => ipcRenderer.on('set-api-key', (_event, value) => callback(value)),
   onSetGroqApiKey: (callback) => ipcRenderer.on('set-groq-api-key', (_event, value) => callback(value)),
   onSetTranscriptionProvider: (callback) => ipcRenderer.on('set-transcription-provider', (_event, value) => callback(value)),
