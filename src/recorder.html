@@ -24,25 +24,11 @@
     let recordingSessionId = 0;
     let currentAbortController = null;
 
-    // Shared AudioContext (reused to prevent accumulation)
-    let sharedAudioContext = null;
-
-    // Current recording state (isolated per session)
+    // Current recording state (isolated per session). AudioContext is now
+    // created fresh per recording and closed in cleanup, instead of shared
+    // across sessions — sharing accumulated bad state after long uptime
+    // and was the suspected cause of "stuck on Transcribing…" hangs.
     let currentRecording = null;
-
-    // ============================================
-    // AudioContext Management
-    // ============================================
-    function getAudioContext() {
-      if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
-        sharedAudioContext = new AudioContext();
-      }
-      // CRITICAL: Resume if suspended (browsers suspend inactive contexts)
-      if (sharedAudioContext.state === 'suspended') {
-        sharedAudioContext.resume();
-      }
-      return sharedAudioContext;
-    }
 
     // ============================================
     // Recording Cleanup
@@ -82,6 +68,11 @@
             // Already stopped, ignore
           }
         });
+      }
+
+      // Close the per-recording AudioContext so it doesn't leak.
+      if (currentRecording.audioContext && currentRecording.audioContext.state !== 'closed') {
+        currentRecording.audioContext.close().catch(() => {});
       }
 
       currentRecording = null;
@@ -132,8 +123,8 @@
           return;
         }
 
-        // Get/resume AudioContext
-        const audioContext = getAudioContext();
+        // Fresh AudioContext per recording — see comment near currentRecording.
+        const audioContext = new AudioContext();
 
         // Set up audio analysis
         const analyser = audioContext.createAnalyser();
@@ -160,6 +151,7 @@
           mediaRecorder: mediaRecorder,
           source: source,
           analyser: analyser,
+          audioContext: audioContext,
           audioChunks: audioChunks,
           levelInterval: null,
           cancelled: false
@@ -275,6 +267,49 @@
     }
 
     // ============================================
+    // Whisper hallucination cleanup
+    // ============================================
+    // Whisper was trained on YouTube content and tends to confabulate
+    // outro phrases ("Thank you for watching", "Subscribe", etc.) when
+    // fed silence or near-silence at the end of a clip. Strip those from
+    // the tail. Body-length guard preserves a legitimate single-utterance
+    // "Thank you" that the user actually spoke alone.
+    const HALLUCINATION_TAIL_PATTERNS = [
+      /\s*thank you for watching[\s.!]*$/i,
+      /\s*thanks for watching[\s.!]*$/i,
+      /\s*(?:please )?(?:like and |don't forget to )?subscribe(?: to my channel)?[\s.!]*$/i,
+      /\s*thank you[\s.!]*$/i,
+      /\s*thanks[\s.!]*$/i,
+      /\s*goodbye[\s.!]*$/i,
+      /\s*bye[\s.!]*$/i,
+      /\s*\[(?:music|applause|silence|laughter|inaudible)\][\s.!]*$/i,
+    ];
+    const HALLUCINATION_MIN_BODY_CHARS = 10;
+
+    function cleanHallucinations(text) {
+      if (!text) return text;
+      let cleaned = text.trim();
+      // Apply repeatedly in case hallucinations stack ("Thank you. Bye.")
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const pattern of HALLUCINATION_TAIL_PATTERNS) {
+          const match = cleaned.match(pattern);
+          if (!match) continue;
+          const matchStart = cleaned.length - match[0].length;
+          const body = cleaned.slice(0, matchStart).trim();
+          if (body.length >= HALLUCINATION_MIN_BODY_CHARS) {
+            console.log(`hallucination strip: removed "${match[0].trim()}" (body=${body.length} chars)`);
+            cleaned = body;
+            changed = true;
+            break;
+          }
+        }
+      }
+      return cleaned.trim();
+    }
+
+    // ============================================
     // Transcription
     // ============================================
     async function transcribeAudio(audioBlob, sessionId) {
@@ -341,15 +376,16 @@
         });
 
         clearTimeout(timeoutId);
-        console.log(`fetch DONE status=${response.status} elapsed=${Date.now() - fetchStart}ms`);
+        const elapsedMs = Date.now() - fetchStart;
+        console.log(`fetch DONE status=${response.status} elapsed=${elapsedMs}ms`);
 
-        return { response, provider: isGroq ? 'Groq' : 'OpenAI' };
+        return { response, provider: isGroq ? 'Groq' : 'OpenAI', elapsedMs };
       }
 
       try {
         // Try primary provider
         const primaryProvider = useGroq ? 'groq' : 'openai';
-        let { response, provider } = await callTranscriptionAPI(primaryProvider, primaryKey);
+        let { response, provider, elapsedMs } = await callTranscriptionAPI(primaryProvider, primaryKey);
 
         // Fallback on rate limit or server error
         if (!response.ok && hasFallback && (response.status === 429 || response.status >= 500)) {
@@ -358,6 +394,7 @@
           const fallbackResult = await callTranscriptionAPI(fallbackProvider, fallbackKey);
           response = fallbackResult.response;
           provider = fallbackResult.provider;
+          elapsedMs = fallbackResult.elapsedMs;
         }
 
         if (!response.ok) {
@@ -376,12 +413,16 @@
           throw new Error(errorMessage);
         }
 
-        const text = await response.text();
-        console.log(`Transcription result (via ${provider}):`, text.trim());
+        const rawText = (await response.text()).trim();
+        const cleanedText = cleanHallucinations(rawText);
+        if (cleanedText !== rawText) {
+          console.log(`hallucination cleaned: ${rawText.length} -> ${cleanedText.length} chars`);
+        }
+        console.log(`Transcription result (via ${provider}):`, cleanedText);
 
         // Only send if still current session
         if (sessionId === recordingSessionId) {
-          window.electronAPI.sendTranscriptionResult(text.trim());
+          window.electronAPI.sendTranscriptionResult(cleanedText, elapsedMs);
         } else {
           console.log('Ignoring stale result from session', sessionId);
         }

@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onSetTranscriptionProvider: (callback) => ipcRenderer.on('set-transcription-provider', (_event, value) => callback(value)),
 
   // Recording - send results
-  sendTranscriptionResult: (text) => ipcRenderer.send('transcription-result', text),
+  sendTranscriptionResult: (text, elapsedMs) => ipcRenderer.send('transcription-result', text, elapsedMs),
   sendTranscriptionError: (error) => ipcRenderer.send('transcription-error', error),
   sendRecordingStatus: (status) => ipcRenderer.send('recording-status', status),
   sendAudioLevels: (levels) => ipcRenderer.send('audio-levels', levels),

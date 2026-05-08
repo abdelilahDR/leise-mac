@@ -10,6 +10,7 @@ const {
   clipboard,
   systemPreferences,
   screen,
+  powerMonitor,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -136,6 +137,63 @@ let enterRegistered = false;
 let overlayHideTimer = null;
 let wasCancelled = false;
 let userDismissed = false;
+let watchdogTimer = null;
+
+// Rolling buffer of last N transcription latencies (ms). Used for the
+// "Performance" line in the tray menu and to spot Groq variance.
+const PERF_BUFFER_SIZE = 20;
+const perfBuffer = [];
+
+function recordPerf(elapsedMs) {
+  if (typeof elapsedMs !== 'number' || !isFinite(elapsedMs)) return;
+  perfBuffer.push(elapsedMs);
+  if (perfBuffer.length > PERF_BUFFER_SIZE) perfBuffer.shift();
+}
+
+function getPerfStats() {
+  if (perfBuffer.length === 0) return null;
+  const sorted = [...perfBuffer].sort((a, b) => a - b);
+  const sum = sorted.reduce((a, b) => a + b, 0);
+  const avg = Math.round(sum / sorted.length);
+  // p95 with floor on small samples
+  const p95Index = Math.max(0, Math.ceil(sorted.length * 0.95) - 1);
+  const p95 = sorted[p95Index];
+  const last = perfBuffer[perfBuffer.length - 1];
+  return { avg, p95, last, n: sorted.length };
+}
+
+// Watchdog: if a transcription sits 'in flight' for more than this, assume
+// the recorder hung (state bug, network hang, MediaRecorder.onstop never
+// firing) and force-reset so the user can retry without restarting.
+const WATCHDOG_MS = 15000;
+
+function startWatchdog() {
+  clearWatchdog();
+  watchdogTimer = setTimeout(() => {
+    console.warn(`[main] watchdog fired — transcription stuck >${WATCHDOG_MS}ms, force-resetting`);
+    watchdogTimer = null;
+    if (recorderWindow && !recorderWindow.isDestroyed()) {
+      recorderWindow.webContents.send('abort-transcription');
+    }
+    const wasUserVisible = !wasCancelled;
+    wasCancelled = false;
+    userDismissed = false;
+    resetToIdle();
+    if (wasUserVisible) {
+      showOverlay('error', { error: 'Transcription timed out — please try again' });
+      scheduleOverlayHide(2500);
+    } else {
+      hideOverlay();
+    }
+  }, WATCHDOG_MS);
+}
+
+function clearWatchdog() {
+  if (watchdogTimer) {
+    clearTimeout(watchdogTimer);
+    watchdogTimer = null;
+  }
+}
 
 // ============================================
 // Icon Creation (Using PNG for better macOS support)
@@ -436,6 +494,12 @@ function copyHistoryEntry(id) {
   }).show();
 }
 
+function buildPerfLabel() {
+  const stats = getPerfStats();
+  if (!stats) return 'Performance: no data yet';
+  return `Performance: avg ${stats.avg}ms · p95 ${stats.p95}ms · last ${stats.last}ms · n=${stats.n}`;
+}
+
 function updateTrayMenu() {
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -448,6 +512,7 @@ function updateTrayMenu() {
       label: 'Recent Transcriptions',
       submenu: buildHistorySubmenu(),
     },
+    { label: buildPerfLabel(), enabled: false },
     { type: 'separator' },
     {
       label: 'Whisp Intro',
@@ -491,6 +556,9 @@ function startRecording() {
     clearTimeout(overlayHideTimer);
     overlayHideTimer = null;
   }
+
+  // Cancel any in-flight watchdog from the previous transcription.
+  clearWatchdog();
 
   // Check for API key
   if (!config.apiKey) {
@@ -538,6 +606,7 @@ function stopRecording() {
   updateTrayIcon(wasCancelled ? 'idle' : 'transcribing');
   updateTrayMenu();
   playSound('Tink'); // Audio feedback for recording stop
+  startWatchdog();
 
   // Update overlay — when cancelled, hide immediately. Transcription still
   // runs in the background and the result lands silently in tray history.
@@ -686,8 +755,11 @@ ipcMain.handle('test-groq-api-key', async (event, apiKey) => {
   }
 });
 
-ipcMain.on('transcription-result', (event, text) => {
-  console.log('[main] transcription-result received, length=', (text || '').length, 'wasCancelled=', wasCancelled, 'userDismissed=', userDismissed);
+ipcMain.on('transcription-result', (event, text, elapsedMs) => {
+  console.log('[main] transcription-result received, length=', (text || '').length, 'elapsed=', elapsedMs, 'wasCancelled=', wasCancelled, 'userDismissed=', userDismissed);
+
+  clearWatchdog();
+  if (typeof elapsedMs === 'number') recordPerf(elapsedMs);
 
   // Skip normal processing if this is a test recording from onboarding
   if (isTestRecording) {
@@ -731,6 +803,8 @@ ipcMain.on('transcription-result', (event, text) => {
 
 ipcMain.on('transcription-error', (event, error) => {
   console.error('[main] transcription-error received:', error, 'wasCancelled=', wasCancelled, 'userDismissed=', userDismissed);
+
+  clearWatchdog();
 
   // Skip normal processing if this is a test recording from onboarding
   if (isTestRecording) {
@@ -786,6 +860,7 @@ ipcMain.on('close-overlay', () => {
   // Mark as dismissed so any in-flight transcription result/error is ignored,
   // then ask the recorder to abort the request if one is running.
   userDismissed = true;
+  clearWatchdog();
   if (recorderWindow && !recorderWindow.isDestroyed()) {
     recorderWindow.webContents.send('abort-transcription');
   }
@@ -937,6 +1012,27 @@ app.whenReady().then(() => {
       body: `Failed to register ${shortcut}. It may be used by another app.`,
     }).show();
   }
+
+  // After Mac sleep/wake, the renderer's MediaRecorder + AudioContext can
+  // hold onto stale audio device handles or end up in a state where onstop
+  // never fires. Recycle the recorder window on resume so the next
+  // recording starts from a clean slate.
+  powerMonitor.on('resume', () => {
+    console.log('[main] system resumed — recycling recorder window');
+    clearWatchdog();
+    if (isRecording) {
+      // Active recording during sleep is unrecoverable; bail out cleanly.
+      isRecording = false;
+      wasCancelled = false;
+      hideOverlay();
+      resetToIdle();
+    }
+    if (recorderWindow && !recorderWindow.isDestroyed()) {
+      recorderWindow.destroy();
+    }
+    recorderWindow = null;
+    createRecorderWindow();
+  });
 });
 
 app.on('will-quit', () => {
