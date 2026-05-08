@@ -284,12 +284,40 @@
       /\s*bye[\s.!]*$/i,
       /\s*\[(?:music|applause|silence|laughter|inaudible)\][\s.!]*$/i,
     ];
+    // Whole-string variants — if the ENTIRE transcription is just one of these
+    // (silence triggered the model to confabulate), drop it to empty so the
+    // existing "No speech detected" overlay handles it instead of pasting
+    // a phantom "Thank you for watching." Built from the tail patterns by
+    // anchoring start (^) and dropping the leading whitespace allowance.
+    const HALLUCINATION_WHOLE_PATTERNS = [
+      /^\s*thank you for watching[\s.!]*$/i,
+      /^\s*thanks for watching[\s.!]*$/i,
+      /^\s*(?:please )?(?:like and |don't forget to )?subscribe(?: to my channel)?[\s.!]*$/i,
+      /^\s*thank you[\s.!]*$/i,
+      /^\s*thanks[\s.!]*$/i,
+      /^\s*goodbye[\s.!]*$/i,
+      /^\s*bye[\s.!]*$/i,
+      /^\s*\[(?:music|applause|silence|laughter|inaudible)\][\s.!]*$/i,
+      /^\s*you[\s.!]*$/i, // single-word "you." — common Whisper silence output
+    ];
     const HALLUCINATION_MIN_BODY_CHARS = 10;
 
     function cleanHallucinations(text) {
       if (!text) return text;
-      let cleaned = text.trim();
-      // Apply repeatedly in case hallucinations stack ("Thank you. Bye.")
+      const trimmed = text.trim();
+      if (!trimmed) return '';
+
+      // Whole-string: entire output is a hallucination (silence triggered it).
+      // Return empty so main treats it as "no speech detected".
+      for (const pattern of HALLUCINATION_WHOLE_PATTERNS) {
+        if (pattern.test(trimmed)) {
+          console.log(`hallucination: whole-string match "${trimmed}" — treating as silence`);
+          return '';
+        }
+      }
+
+      // Tail strip: remove trailing hallucinations after substantial body.
+      let cleaned = trimmed;
       let changed = true;
       while (changed) {
         changed = false;
