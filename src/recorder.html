@@ -382,6 +382,12 @@
         formData.append('file', audioFile);
         formData.append('model', isGroq ? 'whisper-large-v3-turbo' : 'whisper-1');
         formData.append('response_format', 'text');
+        // Force English decoding so the model can't drift into multilingual
+        // word-salad hallucinations on silence ("Конечно dépend Church of...").
+        formData.append('language', 'en');
+        // Deterministic decoding — suppresses low-probability tokens that
+        // hallucinations are typically sampled from.
+        formData.append('temperature', '0');
 
         const endpoint = isGroq
           ? 'https://api.groq.com/openai/v1/audio/transcriptions'
