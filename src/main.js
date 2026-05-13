@@ -139,6 +139,13 @@ let wasCancelled = false;
 let userDismissed = false;
 let watchdogTimer = null;
 
+// Counts how many transcriptions in a row have failed (watchdog fire or
+// transcription-error). On the 2nd consecutive failure we proactively recycle
+// the recorder window — catches degraded states where each call almost
+// completes but never returns clean. Reset to 0 on any successful result.
+let consecutiveFailures = 0;
+const FAILURE_RECYCLE_THRESHOLD = 2;
+
 // Rolling buffer of last N transcription latencies (ms). Used for the
 // "Performance" line in the tray menu and to spot Groq variance.
 const PERF_BUFFER_SIZE = 20;
@@ -160,6 +167,44 @@ function getPerfStats() {
   const p95 = sorted[p95Index];
   const last = perfBuffer[perfBuffer.length - 1];
   return { avg, p95, last, n: sorted.length };
+}
+
+// Destroy + recreate the hidden recorder BrowserWindow. The recorder
+// renderer is the long-lived process that holds AudioContext, MediaRecorder,
+// Chromium's fetch connection pool, and the mic device handle. After enough
+// time / Mac sleep / network state churn it can wedge in ways no app-level
+// reset can recover (this is the "have to restart Whisp every few hours"
+// symptom). Recycling the BrowserWindow gives us a brand-new renderer
+// process — equivalent to an app restart for the part that matters, but
+// transparent to the user.
+function recycleRecorderWindow(reason) {
+  const oldPid = (recorderWindow && !recorderWindow.isDestroyed())
+    ? recorderWindow.webContents.getOSProcessId()
+    : null;
+  console.warn(`[main] recycleRecorderWindow reason="${reason}" oldPid=${oldPid}`);
+  if (recorderWindow && !recorderWindow.isDestroyed()) {
+    try { recorderWindow.destroy(); } catch (e) { console.error('destroy failed:', e); }
+  }
+  recorderWindow = null;
+  createRecorderWindow();
+  const newPid = recorderWindow && recorderWindow.webContents.getOSProcessId();
+  console.warn(`[main] recycleRecorderWindow done newPid=${newPid}`);
+  consecutiveFailures = 0;
+}
+
+function noteTranscriptionFailure(reason) {
+  consecutiveFailures += 1;
+  console.warn(`[main] transcription failure (${reason}), consecutiveFailures=${consecutiveFailures}`);
+  if (consecutiveFailures >= FAILURE_RECYCLE_THRESHOLD) {
+    recycleRecorderWindow(`${consecutiveFailures} consecutive failures`);
+  }
+}
+
+function noteTranscriptionSuccess() {
+  if (consecutiveFailures > 0) {
+    console.log(`[main] transcription recovered, resetting consecutiveFailures (was ${consecutiveFailures})`);
+  }
+  consecutiveFailures = 0;
 }
 
 // Watchdog: if a transcription sits 'in flight' for more than this, assume
@@ -185,6 +230,13 @@ function startWatchdog() {
     } else {
       hideOverlay();
     }
+    // CRITICAL: recycle the recorder window. A watchdog fire means the
+    // renderer's MediaRecorder/AudioContext/fetch never returned — the
+    // process is wedged. Without this, the NEXT recording uses the same
+    // broken renderer and hangs identically, which is why the user had
+    // to restart the entire app every few hours.
+    consecutiveFailures += 1;
+    recycleRecorderWindow(`watchdog fired (consecutiveFailures=${consecutiveFailures})`);
   }, WATCHDOG_MS);
 }
 
@@ -782,10 +834,15 @@ ipcMain.on('transcription-result', (event, text, elapsedMs) => {
       updateTrayIcon('idle');
       return;
     }
+    // Empty result is NOT a failure for recycle purposes — the recorder
+    // worked fine, the user was just silent. Reset the counter.
+    noteTranscriptionSuccess();
     showOverlay('error', { error: 'No speech detected' });
     scheduleOverlayHide(2000);
     return;
   }
+
+  noteTranscriptionSuccess();
 
   if (wasCancelled) {
     // Silent cancel: write to history, keep the tray idle, no overlay flash.
@@ -817,6 +874,9 @@ ipcMain.on('transcription-error', (event, error) => {
     wasCancelled = false;
     return;
   }
+
+  // Any real error counts toward the consecutive-failure recycle.
+  noteTranscriptionFailure(`transcription-error: ${error}`);
 
   // Cancelled (Escape) recordings should also stay silent on errors.
   if (wasCancelled) {
@@ -1018,7 +1078,6 @@ app.whenReady().then(() => {
   // never fires. Recycle the recorder window on resume so the next
   // recording starts from a clean slate.
   powerMonitor.on('resume', () => {
-    console.log('[main] system resumed — recycling recorder window');
     clearWatchdog();
     if (isRecording) {
       // Active recording during sleep is unrecoverable; bail out cleanly.
@@ -1027,11 +1086,7 @@ app.whenReady().then(() => {
       hideOverlay();
       resetToIdle();
     }
-    if (recorderWindow && !recorderWindow.isDestroyed()) {
-      recorderWindow.destroy();
-    }
-    recorderWindow = null;
-    createRecorderWindow();
+    recycleRecorderWindow('powerMonitor resume');
   });
 });
 
