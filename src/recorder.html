@@ -472,7 +472,7 @@
 
         let message = error.message;
         if (error.name === 'AbortError') {
-          message = 'Request timed out. Please try again.';
+          message = 'Timed out. Try again, or restart Whisp.';
         }
 
         // Only send error if still current session
@@ -505,6 +505,12 @@
         currentAbortController = null;
       }
     });
+
+    // Tell main when the OS network comes/goes (Wi-Fi <-> hotspot switch, drop,
+    // reconnect). Main flushes the shared Chromium socket pool + DNS so the next
+    // transcription doesn't reuse a dead connection from the old network.
+    window.addEventListener('online', () => window.electronAPI.notifyNetworkChange('online'));
+    window.addEventListener('offline', () => window.electronAPI.notifyNetworkChange('offline'));
   </script>
 </body>
 </html>

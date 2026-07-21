@@ -11,6 +11,7 @@ const {
   systemPreferences,
   screen,
   powerMonitor,
+  session,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -187,9 +188,28 @@ function recycleRecorderWindow(reason) {
   }
   recorderWindow = null;
   createRecorderWindow();
+  // Recreating the renderer alone does not touch the shared NetworkService —
+  // flush its stale sockets/DNS too, or the new renderer inherits the wedge.
+  flushNetworkStack(`recycle: ${reason}`);
   const newPid = recorderWindow && recorderWindow.webContents.getOSProcessId();
   console.warn(`[main] recycleRecorderWindow done newPid=${newPid}`);
   consecutiveFailures = 0;
+}
+
+// Drop Chromium's shared socket pool + DNS cache. Recycling the recorder
+// BrowserWindow gives us a fresh renderer, but the NetworkService that holds
+// the fetch connection pool and host-resolver cache is SHARED and survives the
+// recycle. After a network change (e.g. Wi-Fi → iPhone hotspot) those stale
+// sockets/DNS entries point at a dead route and every fetch hangs until a full
+// app quit. Flushing them here is what actually clears that wedge.
+function flushNetworkStack(reason) {
+  console.warn(`[main] flushNetworkStack (${reason})`);
+  try {
+    session.defaultSession.closeAllConnections();
+    session.defaultSession.clearHostResolverCache();
+  } catch (e) {
+    console.error('[main] flushNetworkStack failed:', e);
+  }
 }
 
 function noteTranscriptionFailure(reason) {
@@ -225,7 +245,7 @@ function startWatchdog() {
     userDismissed = false;
     resetToIdle();
     if (wasUserVisible) {
-      showOverlay('error', { error: 'Transcription timed out — please try again' });
+      showOverlay('error', { error: 'Timed out. Try again, or restart Whisp.' });
       scheduleOverlayHide(2500);
     } else {
       hideOverlay();
@@ -623,6 +643,11 @@ function startRecording() {
   }
 
   isRecording = true;
+  // A dismiss/cancel from a PREVIOUS overlay must never bleed into this
+  // recording. If userDismissed stayed true, this recording's result would be
+  // silently dropped and the overlay would hang on "Transcribing…" forever.
+  userDismissed = false;
+  wasCancelled = false;
   updateTrayIcon('recording');
   updateTrayMenu();
   playSound('Pop'); // Audio feedback for recording start
@@ -776,6 +801,8 @@ ipcMain.handle('test-api-key', async (event, apiKey) => {
     const fetch = require('node-fetch');
     const response = await fetch('https://api.openai.com/v1/models', {
       headers: { Authorization: `Bearer ${apiKey}` },
+      timeout: 8000, // node-fetch has no default timeout — without this the
+                     // Test button hangs forever if the network is down.
     });
 
     if (response.ok) {
@@ -794,6 +821,8 @@ ipcMain.handle('test-groq-api-key', async (event, apiKey) => {
     const fetch = require('node-fetch');
     const response = await fetch('https://api.groq.com/openai/v1/models', {
       headers: { Authorization: `Bearer ${apiKey}` },
+      timeout: 8000, // node-fetch has no default timeout — without this the
+                     // Test button hangs forever if the network is down.
     });
 
     if (response.ok) {
@@ -822,6 +851,10 @@ ipcMain.on('transcription-result', (event, text, elapsedMs) => {
   if (userDismissed) {
     userDismissed = false;
     wasCancelled = false;
+    // Defense in depth: never leave the overlay/tray stuck on "Transcribing…"
+    // if a dropped result races a dismiss. Force back to idle.
+    hideOverlay();
+    resetToIdle();
     return;
   }
 
@@ -872,6 +905,10 @@ ipcMain.on('transcription-error', (event, error) => {
   if (userDismissed) {
     userDismissed = false;
     wasCancelled = false;
+    // Defense in depth: force back to idle so a dropped error can't leave the
+    // overlay/tray stuck.
+    hideOverlay();
+    resetToIdle();
     return;
   }
 
@@ -902,6 +939,15 @@ ipcMain.on('recording-status', (event, status) => {
   console.log('[main] recording-status:', status);
 });
 
+// The recorder renderer fires this when the OS network comes/goes (e.g. you
+// switch Wi-Fi → iPhone hotspot). Proactively drop the stale socket pool + DNS
+// so the next transcription starts on a fresh connection instead of hanging on
+// a dead route left over from the old network.
+ipcMain.on('network-changed', (event, state) => {
+  console.log('[main] network-changed:', state);
+  flushNetworkStack(`network ${state}`);
+});
+
 ipcMain.on('audio-levels', (event, levels) => {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send('audio-levels', levels);
@@ -916,10 +962,14 @@ ipcMain.on('close-overlay', () => {
     return;
   }
 
-  // Not recording: either transcribing, or showing success/saved/error.
-  // Mark as dismissed so any in-flight transcription result/error is ignored,
-  // then ask the recorder to abort the request if one is running.
-  userDismissed = true;
+  // Not recording: either transcribing (a request IS in flight) or showing a
+  // terminal success/saved/error overlay (nothing in flight). Only mark as
+  // dismissed when a request is actually in flight — the watchdog is armed for
+  // exactly that window. Setting it on a terminal overlay makes the flag stick
+  // and silently drop the NEXT transcription's result.
+  if (watchdogTimer) {
+    userDismissed = true;
+  }
   clearWatchdog();
   if (recorderWindow && !recorderWindow.isDestroyed()) {
     recorderWindow.webContents.send('abort-transcription');

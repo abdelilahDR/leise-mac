@@ -1,6 +1,6 @@
 {
   "name": "whisp",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "description": "macOS voice dictation app using OpenAI Whisper",
   "main": "src/main.js",
   "scripts": {
@@ -21,6 +21,11 @@
   "build": {
     "appId": "com.moonsight.whisp",
     "productName": "Whisp",
+    "files": [
+      "**/*",
+      "!.claude",
+      "!.claude/**"
+    ],
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "build/icon.png",
