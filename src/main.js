@@ -836,9 +836,9 @@ function insertText(text) {
         scheduleOverlayHide(2600);
       } else {
         // Success shows no text: the capsule contracts to a circle, draws the
-        // check, then drops away. The renderer starts the drop at 1500ms.
+        // check, then drops away. The renderer starts the drop at 1100ms.
         showOverlay('success');
-        scheduleOverlayHide(1900);
+        scheduleOverlayHide(1500);
       }
     });
   }, 100);

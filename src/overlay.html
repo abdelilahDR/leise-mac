@@ -27,12 +27,12 @@
     .stage.shown {
       opacity: 1;
       transform: translateY(0) scale(1);
-      transition: transform 320ms cubic-bezier(0.3, 1.4, 0.6, 1), opacity 200ms ease-out;
+      transition: transform 280ms cubic-bezier(0.3, 1.4, 0.6, 1), opacity 140ms ease-out;
     }
     .stage.drop {
       opacity: 0;
       transform: translateY(30px) scale(0.92);
-      transition: transform 300ms cubic-bezier(0.55, 0, 0.85, 0.4), opacity 260ms ease-in 30ms;
+      transition: transform 260ms cubic-bezier(0.55, 0, 0.85, 0.4), opacity 220ms ease-in 20ms;
     }
 
     /* The capsule: dot, wave, timer. Contracts to a circle on success. */
@@ -54,9 +54,9 @@
       cursor: grab;
       user-select: none;
       -webkit-app-region: drag;
-      transition: width 420ms cubic-bezier(0.55, -0.18, 0.28, 1.2);
+      transition: width 380ms cubic-bezier(0.55, -0.18, 0.28, 1.2);
     }
-    .stage.ok .capsule { width: 42px; animation: settle 440ms cubic-bezier(0.4, 0, 0.4, 1); }
+    .stage.ok .capsule { width: 42px; animation: settle 400ms cubic-bezier(0.4, 0, 0.4, 1); }
     @keyframes settle {
       0% { transform: translateY(0); }
       45% { transform: translateY(5px); }
@@ -88,14 +88,14 @@
     .stage.tx .timer { opacity: 0.3; }
 
     .check { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; }
-    .stage.ok .check { opacity: 1; transition: opacity 160ms ease 260ms; }
+    .stage.ok .check { opacity: 1; transition: opacity 140ms ease 220ms; }
     .check svg { width: 18px; height: 18px; }
     .check path {
       stroke: var(--green); stroke-width: 2.4; fill: none;
       stroke-linecap: round; stroke-linejoin: round;
       stroke-dasharray: 20; stroke-dashoffset: 20;
     }
-    .stage.ok .check path { stroke-dashoffset: 0; transition: stroke-dashoffset 300ms ease-out 400ms; }
+    .stage.ok .check path { stroke-dashoffset: 0; transition: stroke-dashoffset 260ms ease-out 340ms; }
 
     /* Message pill: errors and the paste-failed case. */
     .msg {
@@ -223,10 +223,10 @@
           break;
         case 'success':
           // Contract to a circle, draw the check, then drop away.
-          // Main hides the window at 1900ms; the drop starts at 1500ms.
+          // Main hides the window at 1500ms; the drop starts at 1100ms.
           setStage('ok');
           stopTimer();
-          dropTimer = setTimeout(() => { stage.classList.add('drop'); }, 1500);
+          dropTimer = setTimeout(() => { stage.classList.add('drop'); }, 1100);
           break;
         case 'copy':
           // Auto-paste failed or is off: the text is on the clipboard.
