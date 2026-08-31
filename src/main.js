@@ -15,6 +15,13 @@ const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
 
+const IS_DEV = process.env.WHISP_DEV === '1';
+if (IS_DEV) {
+  // MUST run before any app.getPath('userData') call so the dev build's
+  // userData lands in ".../Whisp Dev/" instead of ".../whisp/".
+  app.setName('Whisp Dev');
+}
+
 // ============================================
 // Sound Feedback
 // ============================================
@@ -36,6 +43,23 @@ function playSound(soundName) {
 const configPath = path.join(app.getPath('userData'), 'config.json');
 
 function loadConfig() {
+  if (IS_DEV && !fs.existsSync(configPath)) {
+    try {
+      // app.getPath('appData') returns the ~/Library/Application Support
+      // base dir regardless of app.setName, so we can still find the
+      // installed app's "whisp/" subdir.
+      const installedConfigPath = path.join(
+        app.getPath('appData'), 'whisp', 'config.json'
+      );
+      if (fs.existsSync(installedConfigPath)) {
+        fs.mkdirSync(path.dirname(configPath), { recursive: true });
+        fs.copyFileSync(installedConfigPath, configPath);
+        console.log('[dev] seeded dev config from', installedConfigPath);
+      }
+    } catch (e) {
+      console.warn('[dev] config seed failed, using defaults:', e);
+    }
+  }
   try {
     if (fs.existsSync(configPath)) {
       const data = fs.readFileSync(configPath, 'utf8');
@@ -44,7 +68,7 @@ function loadConfig() {
   } catch (err) {
     console.error('Failed to load config:', err);
   }
-  return { apiKey: '', groqApiKey: '', transcriptionProvider: 'openai', shortcut: 'Control+Space' };
+  return { apiKey: '', groqApiKey: '', transcriptionProvider: 'openai', shortcut: 'Control+Space', soundsEnabled: true, autoPasteEnabled: true, preferredInputDeviceId: null };
 }
 
 function saveConfig(newConfig) {
@@ -129,6 +153,9 @@ function createRecorderWindow() {
   });
 
   recorderWindow.loadFile(path.join(__dirname, 'recorder.html'));
+  if (IS_DEV) {
+    recorderWindow.webContents.openDevTools({ mode: 'detach' });
+  }
 
   recorderWindow.webContents.on('did-finish-load', () => {
     // Send API keys and provider to recorder
@@ -139,6 +166,7 @@ function createRecorderWindow() {
       recorderWindow.webContents.send('set-groq-api-key', config.groqApiKey);
     }
     recorderWindow.webContents.send('set-transcription-provider', config.transcriptionProvider || 'openai');
+    recorderWindow.webContents.send('set-preferred-input-device', config.preferredInputDeviceId || null);
   });
 }
 
@@ -209,7 +237,7 @@ function createSettingsWindow() {
 
   settingsWindow = new BrowserWindow({
     width: 420,
-    height: 540,
+    height: 620,
     center: true,
     resizable: false,
     minimizable: false,
@@ -294,7 +322,7 @@ function createTray() {
     const icon = createTrayIcon('idle');
     tray = new Tray(icon);
     updateTrayMenu();
-    tray.setToolTip('Whisp');
+    tray.setToolTip(IS_DEV ? 'Whisp Dev' : 'Whisp');
   } catch (err) {
     console.error('Failed to create tray:', err);
   }
@@ -363,7 +391,9 @@ function startRecording() {
   isRecording = true;
   updateTrayIcon('recording');
   updateTrayMenu();
-  playSound('Pop'); // Audio feedback for recording start
+  if (config.soundsEnabled !== false) {
+    playSound('Pop'); // Audio feedback for recording start
+  }
 
   // Show overlay
   showOverlay('recording');
@@ -394,7 +424,9 @@ function stopRecording() {
   isRecording = false;
   updateTrayIcon('transcribing');
   updateTrayMenu();
-  playSound('Tink'); // Audio feedback for recording stop
+  if (config.soundsEnabled !== false) {
+    playSound('Tink'); // Audio feedback for recording stop
+  }
 
   // Update overlay
   showOverlay('transcribing');
@@ -463,6 +495,15 @@ function insertText(text) {
   // Copy to clipboard
   clipboard.writeText(text);
 
+  // If auto-paste is disabled, just copy to clipboard and show message
+  if (config.autoPasteEnabled === false) {
+    if (!isRecording) {
+      showOverlay('success', { text: 'Copied to clipboard!' });
+      scheduleOverlayHide(3000);
+    }
+    return;
+  }
+
   const { exec } = require('child_process');
 
   // Small delay to ensure clipboard is ready, then paste
@@ -504,6 +545,7 @@ ipcMain.handle('save-config', (event, newConfig) => {
     recorderWindow.webContents.send('set-api-key', config.apiKey);
     recorderWindow.webContents.send('set-groq-api-key', config.groqApiKey);
     recorderWindow.webContents.send('set-transcription-provider', config.transcriptionProvider || 'openai');
+    recorderWindow.webContents.send('set-preferred-input-device', config.preferredInputDeviceId || null);
   }
 
   return success;
@@ -720,6 +762,10 @@ app.whenReady().then(() => {
   createRecorderWindow();
   createTray();
 
+  if (IS_DEV && process.platform === 'darwin' && app.dock) {
+    app.dock.hide();
+  }
+
   // Show onboarding if not completed, otherwise check for API key
   if (!config.onboardingComplete) {
     createOnboardingWindow();
@@ -728,7 +774,11 @@ app.whenReady().then(() => {
   }
 
   // Register global shortcut
-  const shortcut = config.shortcut || 'Control+Space';
+  const shortcut = IS_DEV
+    ? 'Control+Alt+Space'           // hardcoded in dev: avoids the seeded
+                                    // config inheriting the installed app's
+                                    // Control+Space and double-binding.
+    : (config.shortcut || 'Control+Space');
   const registered = globalShortcut.register(shortcut, () => {
     toggleRecording();
   });

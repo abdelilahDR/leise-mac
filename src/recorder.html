@@ -14,11 +14,50 @@
     let recordingSessionId = 0;
     let currentAbortController = null;
 
+    // User-selected input device (null = follow system default)
+    let preferredInputDeviceId = null;
+
     // Shared AudioContext (reused to prevent accumulation)
     let sharedAudioContext = null;
 
     // Current recording state (isolated per session)
     let currentRecording = null;
+
+    // Peak normalized level (0-1) below which we treat the recording as
+    // "microphone is silent". Tuned so ordinary room noise still passes.
+    const SILENCE_THRESHOLD = 0.02;
+
+    function buildSilenceMessage(deviceLabel) {
+      const label = deviceLabel || 'unknown device';
+      return `Microphone is silent — using "${label}". Check System Settings → Sound → Input.`;
+    }
+
+    // Decode the finished recording and return the peak absolute sample in
+    // [0, 1]. This is our authoritative silence signal because it reads the
+    // same bytes Whisper would receive, bypassing the live analyser graph
+    // (which can read flat zeros after macOS output-device swaps even while
+    // the underlying MediaStreamTrack is capturing real audio).
+    // Returns null on decode error — fail-open so we'd rather pay for a
+    // stray Whisper call than falsely accuse the mic.
+    async function measureBlobPeak(blob) {
+      try {
+        const arrayBuffer = await blob.arrayBuffer();
+        // Throwaway offline context just for decoding; its sample rate
+        // doesn't affect peak amplitude.
+        const ctx = new OfflineAudioContext(1, 1, 16000);
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        const ch = audioBuffer.getChannelData(0);
+        let peak = 0;
+        for (let i = 0; i < ch.length; i++) {
+          const v = Math.abs(ch[i]);
+          if (v > peak) peak = v;
+        }
+        return peak;
+      } catch (e) {
+        console.warn('measureBlobPeak decode failed, assuming non-silent:', e);
+        return null;
+      }
+    }
 
     // ============================================
     // AudioContext Management
@@ -32,6 +71,75 @@
         sharedAudioContext.resume();
       }
       return sharedAudioContext;
+    }
+
+    function closeAudioContext() {
+      if (sharedAudioContext && sharedAudioContext.state !== 'closed') {
+        sharedAudioContext.close().catch(() => {});
+      }
+      sharedAudioContext = null;
+    }
+
+    // Rebuild the audio context whenever the system's audio devices change
+    // (e.g. plugging/unplugging a monitor, switching Bluetooth headset).
+    // Without this, Chromium can keep routing audio from a stale default device.
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', async () => {
+        console.log('Audio devices changed — resetting audio context');
+        closeAudioContext();
+
+        // If the user's explicitly chosen input just disappeared, drop it
+        // so the next recording gracefully falls back to the system default
+        // instead of erroring out.
+        if (preferredInputDeviceId) {
+          try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const stillPresent = devices.some(
+              (d) => d.kind === 'audioinput' && d.deviceId === preferredInputDeviceId
+            );
+            if (!stillPresent) {
+              console.log('Preferred input device disappeared, clearing in-memory preference');
+              preferredInputDeviceId = null;
+            }
+          } catch (e) {
+            console.warn('devicechange enumerate failed:', e);
+          }
+        }
+      });
+    }
+
+    // ============================================
+    // Device Selection
+    // ============================================
+    async function resolveDefaultAudioInputId() {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const inputs = devices.filter((d) => d.kind === 'audioinput');
+        console.log(
+          'Available audio inputs:',
+          inputs.map((d) => `${d.label || '(no label)'} [${d.deviceId}]`)
+        );
+        // If the user has explicitly picked an input in Settings and it is
+        // still present, honor that choice over whatever macOS considers
+        // the current default.
+        if (preferredInputDeviceId) {
+          const match = inputs.find((d) => d.deviceId === preferredInputDeviceId);
+          if (match) {
+            console.log('Using preferred input device:', match.label || preferredInputDeviceId);
+            return preferredInputDeviceId;
+          }
+          console.warn('Preferred input device not available, falling back to system default');
+        }
+        // Prefer the magic 'default' pseudo-device — Chromium resolves this
+        // to the CURRENT system default on every getUserMedia call, which is
+        // exactly what we want after the user swaps monitors/headsets.
+        const def = inputs.find((d) => d.deviceId === 'default');
+        if (def) return 'default';
+        if (inputs.length > 0) return inputs[0].deviceId;
+      } catch (e) {
+        console.warn('enumerateDevices failed:', e);
+      }
+      return null;
     }
 
     // ============================================
@@ -92,6 +200,11 @@
       transcriptionProvider = provider || 'openai';
     });
 
+    window.electronAPI.onSetPreferredInputDevice((id) => {
+      preferredInputDeviceId = id || null;
+      console.log('Preferred input device set to:', preferredInputDeviceId || '(system default)');
+    });
+
     // ============================================
     // Recording Functions
     // ============================================
@@ -109,12 +222,36 @@
       cleanupCurrentRecording();
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            sampleRate: 16000,
-          }
-        });
+        // Resolve the CURRENT system default input every time we record so
+        // that monitor/headset swaps take effect immediately.
+        const deviceId = await resolveDefaultAudioInputId();
+        const audioConstraints = {
+          channelCount: 1,
+          sampleRate: 16000,
+        };
+        if (deviceId) {
+          audioConstraints.deviceId = { exact: deviceId };
+        }
+
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        } catch (primaryErr) {
+          // If the exact device vanished between enumeration and capture,
+          // fall back to whatever the browser considers the default.
+          console.warn('getUserMedia with resolved device failed, falling back:', primaryErr);
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: { channelCount: 1, sampleRate: 16000 }
+          });
+        }
+
+        let deviceLabel = 'unknown device';
+        const [audioTrack] = stream.getAudioTracks();
+        if (audioTrack) {
+          const settings = audioTrack.getSettings ? audioTrack.getSettings() : {};
+          deviceLabel = audioTrack.label || 'unknown device';
+          console.log('Recording from device:', deviceLabel, settings);
+        }
 
         // Check if we were superseded while waiting for mic
         if (mySessionId !== recordingSessionId) {
@@ -152,7 +289,9 @@
           analyser: analyser,
           audioChunks: audioChunks,
           levelInterval: null,
-          cancelled: false
+          cancelled: false,
+          deviceLabel: deviceLabel,
+          peakLevel: 0,
         };
 
         // Level monitoring (send to main for waveform)
@@ -175,6 +314,10 @@
             }
             levels.push(sum / (bandSize * 255));
           }
+
+          // Track the loudest band we've ever seen during this recording so
+          // we can detect "mic is silent" at stop time.
+          currentRecording.peakLevel = Math.max(currentRecording.peakLevel, ...levels);
 
           window.electronAPI.sendAudioLevels(levels);
         }, 50);
@@ -203,13 +346,55 @@
 
           // Capture chunks immediately (before any async work)
           const chunksToProcess = [...audioChunks];
+          const capturedPeak = currentRecording.peakLevel;
+          const capturedLabel = currentRecording.deviceLabel;
 
           // Stop stream tracks (this recording's stream only)
           stream.getTracks().forEach(track => track.stop());
 
           // Create blob from this session's chunks only
           const audioBlob = new Blob(chunksToProcess, { type: 'audio/webm' });
-          console.log('Created audio blob, size:', audioBlob.size, 'chunks:', chunksToProcess.length, 'session:', mySessionId);
+
+          // A tiny blob is unambiguously broken — don't bother decoding.
+          if (audioBlob.size < 1000) {
+            console.warn(
+              'Silence detected — blob too small, size:', audioBlob.size,
+              'device:', capturedLabel
+            );
+            if (mySessionId === recordingSessionId) {
+              window.electronAPI.sendTranscriptionError(buildSilenceMessage(capturedLabel));
+            }
+            return;
+          }
+
+          // Decode the actual recorded bytes to get an authoritative peak.
+          // The live analyser (capturedPeak) can read flat zeros after a
+          // macOS output-device swap even while the MediaRecorder was
+          // capturing real audio — so we can't trust it to gate Whisper.
+          const measuredPeak = await measureBlobPeak(audioBlob);
+          console.log(
+            'Created audio blob, size:', audioBlob.size,
+            'chunks:', chunksToProcess.length,
+            'session:', mySessionId,
+            'livePeak:', capturedPeak.toFixed(4),
+            'measuredPeak:', measuredPeak === null ? 'null' : measuredPeak.toFixed(4),
+            'device:', capturedLabel
+          );
+
+          // Silence detection: use the decoded peak as the source of truth.
+          // If decode failed (null), fail open and let Whisper try.
+          if (measuredPeak !== null && measuredPeak < SILENCE_THRESHOLD) {
+            console.warn(
+              'Silence detected — measuredPeak:', measuredPeak.toFixed(4),
+              'livePeak:', capturedPeak.toFixed(4),
+              'blob size:', audioBlob.size,
+              'device:', capturedLabel
+            );
+            if (mySessionId === recordingSessionId) {
+              window.electronAPI.sendTranscriptionError(buildSilenceMessage(capturedLabel));
+            }
+            return;
+          }
 
           // Transcribe
           await transcribeAudio(audioBlob, mySessionId);
@@ -288,14 +473,9 @@
         return;
       }
 
-      // Validate audio size (minimum ~1KB for meaningful audio)
-      if (audioBlob.size < 1000) {
-        console.log('Audio blob too small, skipping');
-        if (sessionId === recordingSessionId) {
-          window.electronAPI.sendTranscriptionResult('');
-        }
-        return;
-      }
+      // Note: silence / too-small-blob is detected in mediaRecorder.onstop
+      // and surfaced as a descriptive transcription error before we ever
+      // get here, so we unconditionally hit the API below.
 
       // Create abort controller for this transcription
       currentAbortController = new AbortController();

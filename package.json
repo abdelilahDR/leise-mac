@@ -5,6 +5,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
+    "dev": "WHISP_DEV=1 electron .",
     "build": "electron-builder --mac",
     "pack": "electron-builder --mac --dir"
   },

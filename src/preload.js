@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onSetApiKey: (callback) => ipcRenderer.on('set-api-key', (_event, value) => callback(value)),
   onSetGroqApiKey: (callback) => ipcRenderer.on('set-groq-api-key', (_event, value) => callback(value)),
   onSetTranscriptionProvider: (callback) => ipcRenderer.on('set-transcription-provider', (_event, value) => callback(value)),
+  onSetPreferredInputDevice: (callback) => ipcRenderer.on('set-preferred-input-device', (_event, value) => callback(value)),
 
   // Recording - send results
   sendTranscriptionResult: (text) => ipcRenderer.send('transcription-result', text),
