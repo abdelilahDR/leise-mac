@@ -36,8 +36,10 @@
     }
 
     /* The capsule: dot, wave, timer. Contracts to a circle on success. */
+    /* No backdrop-filter here: a transparent Electron window has no backdrop
+       to sample, and Chromium paints a ghost pill around the element instead. */
     .capsule {
-      width: 212px;
+      width: 158px;
       height: 42px;
       border-radius: 21px;
       display: flex;
@@ -49,8 +51,6 @@
       border: 1px solid var(--glass-border);
       box-shadow: var(--glass-shadow);
       color: var(--glass-ink);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
       cursor: grab;
       user-select: none;
       -webkit-app-region: drag;
@@ -109,8 +109,6 @@
       border: 1px solid var(--glass-border);
       box-shadow: var(--glass-shadow);
       color: var(--glass-ink);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
       font-size: 12.5px;
       white-space: nowrap;
       cursor: grab;
@@ -186,7 +184,7 @@
     function bandForPosition(i) {
       return Math.abs(i - CENTER) * 2 - (i < CENTER ? 1 : 0);
     }
-    const LEVEL_GAIN = 1.5;
+    const LEVEL_GAIN = 2.0;
 
     let startTime = Date.now();
     let timerInterval = null;
@@ -256,7 +254,9 @@
       if (!Array.isArray(levels)) return;
       for (let i = 0; i < BAR_COUNT; i++) {
         const level = levels[bandForPosition(i)] || 0;
-        const h = 4 + Math.min(1, level * LEVEL_GAIN) * 20;
+        // sqrt lifts quiet speech into the visible range without clipping loud
+        const v = Math.min(1, Math.sqrt(level * LEVEL_GAIN));
+        const h = 4 + v * 20;
         bars[i].style.height = h.toFixed(1) + 'px';
       }
     });
