@@ -425,7 +425,10 @@ function createOverlayWindow() {
     skipTaskbar: true,
     resizable: false,
     movable: true,
-    hasShadow: true,
+    // macOS shadows on transparent windows outline the content's alpha —
+    // including the CSS drop shadow — as a rim-lit ghost pill. Depth comes
+    // from the capsule's own box-shadow instead.
+    hasShadow: false,
     type: 'panel', // macOS: doesn't activate app when shown
     // focusable: true (default) — required for click events to fire on macOS
     webPreferences: {

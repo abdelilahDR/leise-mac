@@ -181,21 +181,25 @@
 
           analyser.getByteFrequencyData(dataArray);
 
-          // 13 bands over the lower 60% of the spectrum, where voice energy
-          // lives — the top bins are near-silent for speech and would flatten
-          // the overlay's outer bars.
+          // 13 log-spaced bands, 80Hz to 5kHz. Linear splits put nearly all
+          // speech energy in the first band (one tall bar, twelve dead dots);
+          // log spacing spreads voice across every bar. The AudioContext runs
+          // at the device rate (usually 48k), so band edges are computed from
+          // the real bin width, never assumed.
           const BAND_COUNT = 13;
-          const usable = Math.floor(bufferLength * 0.6);
-          const bandSize = Math.floor(usable / BAND_COUNT);
+          const binHz = (audioContext.sampleRate / 2) / bufferLength;
+          const FMIN = 80, FMAX = 5000;
           const levels = [];
           for (let i = 0; i < BAND_COUNT; i++) {
-            const start = i * bandSize;
-            const end = start + bandSize;
+            const loHz = FMIN * Math.pow(FMAX / FMIN, i / BAND_COUNT);
+            const hiHz = FMIN * Math.pow(FMAX / FMIN, (i + 1) / BAND_COUNT);
+            const start = Math.min(bufferLength - 1, Math.round(loHz / binHz));
+            const end = Math.min(bufferLength, Math.max(start + 1, Math.round(hiHz / binHz)));
             let sum = 0;
             for (let j = start; j < end; j++) {
               sum += dataArray[j];
             }
-            levels.push(sum / (bandSize * 255));
+            levels.push(sum / ((end - start) * 255));
           }
 
           window.electronAPI.sendAudioLevels(levels);
