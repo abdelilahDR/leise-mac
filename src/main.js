@@ -13,6 +13,7 @@ const {
   powerMonitor,
   session,
   shell,
+  nativeTheme,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -59,7 +60,13 @@ const CONFIG_DEFAULTS = {
   soundsEnabled: true,
   autoPasteEnabled: true,
   preferredInputDeviceId: '',
+  appearance: 'system', // system | light | dark, drives nativeTheme.themeSource
 };
+
+function applyAppearance() {
+  const value = ['light', 'dark'].includes(config.appearance) ? config.appearance : 'system';
+  nativeTheme.themeSource = value;
+}
 
 function loadConfig() {
   try {
@@ -461,7 +468,7 @@ function createSettingsWindow() {
 
   settingsWindow = new BrowserWindow({
     width: 400,
-    height: 500,
+    height: 545,
     center: true,
     resizable: false,
     minimizable: false,
@@ -851,6 +858,8 @@ ipcMain.handle('save-config', (event, newConfig) => {
   config = { ...config, ...newConfig };
   let shortcutError = null;
 
+  if (newConfig.appearance) applyAppearance();
+
   // Shortcut changed: swap the global registration, roll back on failure.
   if (newConfig.shortcut && newConfig.shortcut !== previousShortcut) {
     globalShortcut.unregister(previousShortcut);
@@ -1189,6 +1198,7 @@ app.whenReady().then(() => {
   // Check Accessibility permission
   systemPreferences.isTrustedAccessibilityClient(true);
 
+  applyAppearance();
   createRecorderWindow();
   createTray();
 
@@ -1304,6 +1314,19 @@ if (process.env.WHISP_UITEST) {
 
         await snap(settingsWindow, 'settings');
         await snap(onboardingWindow, 'onboarding');
+
+        // Light mode pass: flip the theme source and re-capture.
+        nativeTheme.themeSource = 'light';
+        showOverlay('recording');
+        const lightLevels = setInterval(() => {
+          if (overlayWindow && !overlayWindow.isDestroyed()) {
+            overlayWindow.webContents.send('audio-levels', fakeLevels());
+          }
+        }, 50);
+        await new Promise((r) => setTimeout(r, 700));
+        await snap(overlayWindow, 'overlay-recording-light');
+        clearInterval(lightLevels);
+        await snap(settingsWindow, 'settings-light');
         console.log('[uitest] captured:', JSON.stringify(shots));
       } catch (err) {
         console.error('[uitest] failed:', err);

@@ -150,6 +150,14 @@
 
   <p class="section-label">Behavior</p>
   <div class="group">
+    <div class="row">
+      <span>Appearance</span>
+      <div class="seg" style="width:196px" id="segAppearance">
+        <button type="button" data-a="system">System</button>
+        <button type="button" data-a="light">Light</button>
+        <button type="button" data-a="dark">Dark</button>
+      </div>
+    </div>
     <div class="row"><span>Sounds</span><button type="button" class="toggle" id="tglSounds" aria-label="Sounds"></button></div>
     <div class="row"><span>Paste at cursor</span><button type="button" class="toggle" id="tglPaste" aria-label="Paste at cursor"></button></div>
     <div class="row"><span>Microphone</span><span class="ddwrap"><select id="micSelect"><option value="">System default</option></select></span></div>
@@ -241,6 +249,19 @@
       api.openExternal(PROVIDERS[provider].url);
     });
 
+    const segAppearance = document.getElementById('segAppearance');
+    function renderAppearance() {
+      segAppearance.querySelectorAll('button').forEach((b) => {
+        b.classList.toggle('on', b.dataset.a === (config.appearance || 'system'));
+      });
+    }
+    segAppearance.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      save({ appearance: b.dataset.a });
+      renderAppearance();
+    });
+
     function bindToggle(el, field) {
       el.addEventListener('click', () => {
         const next = !el.classList.contains('on');
@@ -327,6 +348,7 @@
       tglPaste.classList.toggle('on', config.autoPasteEnabled !== false);
       if (config.needsAccessibility) document.getElementById('warn').classList.add('visible');
       renderProvider();
+      renderAppearance();
       renderShortcut();
       loadMics();
     });
