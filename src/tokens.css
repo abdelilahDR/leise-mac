@@ -1,0 +1,51 @@
+/* Whisp UI tokens — one source of truth for every window.
+   Light is the base; dark overrides via system appearance. */
+:root {
+  --ground: #F2F2F7;
+  --surface: #FFFFFF;
+  --ink: #1D1D1F;
+  --secondary: #6E6E73;
+  --hairline: rgba(0, 0, 0, 0.12);
+  --row-sep: rgba(127, 127, 127, 0.28);
+
+  --glass-bg: rgba(252, 252, 253, 0.92);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  --glass-ink: #1D1D1F;
+
+  --red: #FF3B30;
+  --orange: #FF9500;
+  --green: #34C759;
+  --blue: #007AFF;
+
+  --seg-track: rgba(120, 120, 128, 0.16);
+  --seg-thumb: #FFFFFF;
+  --control-bg: rgba(120, 120, 128, 0.12);
+
+  --font: -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: 'SF Mono', ui-monospace, Menlo, monospace;
+
+  --radius-group: 10px;
+  --radius-control: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #1E1E20;
+    --surface: #2A2A2D;
+    --ink: #F2F2F4;
+    --secondary: #98989F;
+    --hairline: rgba(255, 255, 255, 0.14);
+
+    --glass-bg: rgba(28, 28, 30, 0.88);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    --glass-ink: #F2F2F4;
+
+    --blue: #409CFF;
+
+    --seg-track: rgba(118, 118, 128, 0.24);
+    --seg-thumb: #636368;
+    --control-bg: rgba(118, 118, 128, 0.24);
+  }
+}

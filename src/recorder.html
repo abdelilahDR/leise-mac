@@ -110,12 +110,27 @@
       cleanupCurrentRecording();
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            sampleRate: 16000,
+        const audioConstraints = { channelCount: 1, sampleRate: 16000 };
+        try {
+          const cfg = await window.electronAPI.getConfig();
+          if (cfg && cfg.preferredInputDeviceId) {
+            audioConstraints.deviceId = { exact: cfg.preferredInputDeviceId };
           }
-        });
+        } catch (e) { /* fall through to default device */ }
+
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        } catch (err) {
+          // Preferred mic unplugged or gone — retry on the default device
+          // rather than failing the recording.
+          if (audioConstraints.deviceId) {
+            delete audioConstraints.deviceId;
+            stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+          } else {
+            throw err;
+          }
+        }
 
         // Check if we were superseded while waiting for mic
         if (mySessionId !== recordingSessionId) {
@@ -166,9 +181,14 @@
 
           analyser.getByteFrequencyData(dataArray);
 
-          const bandSize = Math.floor(bufferLength / 5);
+          // 13 bands over the lower 60% of the spectrum, where voice energy
+          // lives — the top bins are near-silent for speech and would flatten
+          // the overlay's outer bars.
+          const BAND_COUNT = 13;
+          const usable = Math.floor(bufferLength * 0.6);
+          const bandSize = Math.floor(usable / BAND_COUNT);
           const levels = [];
-          for (let i = 0; i < 5; i++) {
+          for (let i = 0; i < BAND_COUNT; i++) {
             const start = i * bandSize;
             const end = start + bandSize;
             let sum = 0;

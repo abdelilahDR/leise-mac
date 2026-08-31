@@ -2,915 +2,333 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Welcome to Whisp</title>
+  <title>Whisp</title>
+  <link rel="stylesheet" href="tokens.css">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #1a1a1a;
-      color: #fff;
-      padding: 20px;
-      padding-top: 44px;
+      font-family: var(--font);
+      background: var(--ground);
+      color: var(--ink);
+      font-size: 13px;
+      padding: 40px 22px 18px;
       overflow: hidden;
-    }
-
-    .drag-region {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 44px;
-      -webkit-app-region: drag;
-      z-index: 100;
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 20px;
-    }
-
-    h1 {
-      font-size: 24px;
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-
-    .subtitle {
-      color: #888;
-      font-size: 14px;
-    }
-
-    .checklist {
+      -webkit-font-smoothing: antialiased;
+      height: 100vh;
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      margin-bottom: 16px;
     }
+    .drag-region { position: fixed; top: 0; left: 0; right: 0; height: 40px; -webkit-app-region: drag; z-index: 100; }
 
-    .checklist-item {
-      background: #2a2a2a;
-      border: 1px solid #333;
-      border-radius: 10px;
-      padding: 12px 14px;
-      transition: border-color 0.3s;
+    .screen { display: none; flex-direction: column; flex: 1; }
+    .screen.visible { display: flex; }
+
+    h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4px; }
+    .sub { font-size: 13px; color: var(--secondary); margin-bottom: 16px; text-wrap: pretty; line-height: 1.45; }
+    .center { text-align: center; }
+
+    .hero-mark {
+      width: 68px; height: 68px; border-radius: 50%;
+      margin: 26px auto 18px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0, 122, 255, 0.1);
+      color: var(--blue);
     }
+    .hero-mark svg { width: 30px; height: 30px; }
 
-    .checklist-item.completed {
-      border-color: #34C759;
-    }
-
-    .checklist-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .checklist-icon {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      flex-shrink: 0;
-    }
-
-    .checklist-icon.pending {
-      background: #444;
-      color: #888;
-    }
-
-    .checklist-icon.completed {
-      background: #34C759;
-      color: #fff;
-    }
-
-    .checklist-title {
-      font-size: 14px;
-      font-weight: 500;
-      flex: 1;
-    }
-
-    .checklist-content {
-      margin-left: 34px;
-      margin-top: 6px;
-    }
-
-    .checklist-desc {
-      font-size: 12px;
-      color: #888;
-      margin-bottom: 8px;
-      line-height: 1.4;
-    }
-
-    .checklist-desc.success {
-      color: #34C759;
-    }
-
-    button {
-      padding: 8px 16px;
-      font-size: 13px;
-      font-weight: 500;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .btn-action {
-      background: #007AFF;
-      color: #fff;
-    }
-
-    .btn-action:hover {
-      background: #0056b3;
-    }
-
-    .btn-action:disabled {
-      background: #444;
-      color: #666;
-      cursor: not-allowed;
-    }
-
-    .btn-small {
-      padding: 6px 12px;
-      font-size: 12px;
-    }
-
-    .provider-card {
-      background: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 8px;
-      padding: 10px 12px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      transition: border-color 0.2s;
-    }
-
-    .provider-card:hover {
-      border-color: #555;
-    }
-
-    .provider-card.selected {
-      border-color: #34C759;
-    }
-
-    .provider-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .group {
+      background: var(--surface);
+      border: 0.5px solid var(--hairline);
+      border-radius: var(--radius-group);
+      overflow: hidden;
       margin-bottom: 8px;
     }
-
-    .provider-radio {
-      width: 16px;
-      height: 16px;
-      accent-color: #34C759;
-      cursor: pointer;
+    .row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; min-height: 44px; padding: 6px 14px;
     }
+    .row + .row { border-top: 0.5px solid var(--row-sep); }
+    .row .nm { font-weight: 500; }
+    .state-ok { color: var(--green); font-size: 12px; font-weight: 500; }
+    .state-wait { color: var(--secondary); font-size: 12px; }
 
-    .provider-name {
-      font-size: 12px;
-      font-weight: 500;
+    .btn {
+      background: var(--blue); color: #fff;
+      border: none; border-radius: 6px;
+      font-family: inherit; font-size: 12px; font-weight: 500;
+      padding: 5px 12px; cursor: pointer;
+    }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+    .btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .btn-wide {
+      display: block; width: 100%; padding: 10px 0; margin-top: auto;
+      font-size: 13px; border-radius: 8px;
+    }
+    .btn-ghost { background: transparent; color: var(--blue); }
+
+    .seg { display: flex; border-radius: 7px; padding: 2px; background: var(--seg-track); font-size: 12px; margin-bottom: 8px; }
+    .seg button {
+      flex: 1; text-align: center; padding: 5px 0; border-radius: 5px;
+      font-weight: 500; opacity: 0.65; border: none; background: transparent;
+      color: inherit; font-family: inherit; font-size: inherit; cursor: pointer;
+    }
+    .seg button.on { opacity: 1; background: var(--seg-thumb); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); }
+
+    .keyrow { display: flex; align-items: center; gap: 8px; padding: 10px 14px; }
+    .keyinput {
+      border: none; background: transparent; outline: none;
+      color: var(--ink); font-family: var(--mono); font-size: 12px;
       flex: 1;
     }
+    .keyinput::placeholder { color: var(--secondary); opacity: 0.7; }
+    .kdot { width: 7px; height: 7px; border-radius: 50%; background: var(--secondary); opacity: 0.4; flex-shrink: 0; }
+    .kdot.ok { background: var(--green); opacity: 1; }
+    .kdot.bad { background: var(--red); opacity: 1; }
+    .kdot.busy { background: var(--orange); opacity: 1; }
+    .help { font-size: 11.5px; color: var(--secondary); margin: 2px 2px 0; }
+    .help a { color: var(--blue); text-decoration: none; cursor: pointer; }
 
-    .provider-badge {
-      font-size: 9px;
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-weight: 600;
+    kbd {
+      font-family: var(--mono); font-size: 11px; border-radius: 4px; padding: 1px 6px;
+      background: rgba(127, 127, 127, 0.18);
     }
 
-    .badge-fast {
-      background: rgba(52, 199, 89, 0.2);
-      color: #34C759;
+    textarea {
+      width: 100%; min-height: 96px; resize: none;
+      background: var(--surface); color: var(--ink);
+      border: 0.5px solid var(--hairline); border-radius: var(--radius-group);
+      font-family: inherit; font-size: 13px; line-height: 1.5;
+      padding: 12px 14px; outline: none;
     }
+    textarea:focus { border-color: var(--blue); }
 
-    .badge-default {
-      background: rgba(52, 199, 89, 0.2);
-      color: #34C759;
-      display: none;
-    }
+    .dots { display: flex; gap: 5px; justify-content: center; padding: 14px 0 2px; }
+    .dots i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.18; }
+    .dots i.on { opacity: 0.75; }
 
-    .provider-card.selected .badge-default {
-      display: inline-block;
-    }
-
-    .provider-content {
-      margin-left: 24px;
-    }
-
-    .api-key-row {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 6px;
-    }
-
-    .api-key-row input {
-      flex: 1;
-      padding: 8px 12px;
-      font-size: 13px;
-      border: 1px solid #333;
-      border-radius: 6px;
-      background: #1a1a1a;
-      color: #fff;
-      outline: none;
-    }
-
-    .api-key-row input:focus {
-      border-color: #007AFF;
-    }
-
-    .input-hint {
-      font-size: 11px;
-      color: #666;
-    }
-
-    .input-hint a {
-      color: #007AFF;
-      text-decoration: none;
-    }
-
-    .test-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .test-result {
-      font-size: 12px;
-      color: #34C759;
-      flex: 1;
-    }
-
-    .recording-indicator {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      color: #FF3B30;
-      font-size: 13px;
-    }
-
-    .recording-dot {
-      width: 10px;
-      height: 10px;
-      background: #FF3B30;
-      border-radius: 50%;
-      animation: pulse 1s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(0.9); }
-    }
-
-    .btn-done {
-      background: #FF3B30;
-      color: #fff;
-    }
-
-    .btn-done:hover {
-      background: #d63229;
-    }
-
-    .success-section {
-      background: linear-gradient(135deg, #1a3a1a 0%, #1a2a1a 100%);
-      border: 1px solid #34C759;
-      border-radius: 10px;
-      padding: 16px;
-      margin-bottom: 16px;
-      display: none;
-    }
-
-    .success-section.visible {
-      display: block;
-    }
-
-    .success-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-
-    .success-header h2 {
-      font-size: 16px;
-      font-weight: 600;
-      color: #34C759;
-    }
-
-    .success-content {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .success-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 13px;
-      color: #ccc;
-    }
-
-    .success-row img {
-      width: 20px;
-      height: 20px;
-    }
-
-    .success-row .icon {
-      font-size: 16px;
-      width: 20px;
-      text-align: center;
-    }
-
-    .kbd {
-      background: #444;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 11px;
-    }
-
-    .footer {
-      display: flex;
-      justify-content: center;
-    }
-
-    .btn-start {
-      background: #34C759;
-      color: #fff;
-      padding: 12px 40px;
-      font-size: 15px;
-      font-weight: 600;
-      border-radius: 10px;
-      width: 100%;
-    }
-
-    .btn-start:hover {
-      background: #2db84d;
-    }
-
-    .btn-start:disabled {
-      background: #333;
-      color: #666;
-      cursor: not-allowed;
-    }
+    .g-title { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+    .g-open-settings { font-size: 12px; color: var(--blue); cursor: pointer; -webkit-app-region: no-drag; }
   </style>
 </head>
 <body>
   <div class="drag-region"></div>
 
-  <div class="header">
-    <h1>Welcome to Whisp</h1>
-    <p class="subtitle">Voice-to-text in one shortcut</p>
+  <!-- 1 · Welcome -->
+  <div class="screen center" id="s-welcome">
+    <div class="hero-mark"><svg viewBox="0 0 16 16"><rect x="6" y="1.8" width="4" height="7.4" rx="2" fill="currentColor"/><path d="M3.6 7.6a4.4 4.4 0 0 0 8.8 0M8 12v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+    <h1>Whisp</h1>
+    <p class="sub">Voice to text, anywhere you type.</p>
+    <button class="btn btn-wide" id="btnWelcome">Continue</button>
+    <div class="dots"><i class="on"></i><i></i><i></i><i></i></div>
   </div>
 
-  <div class="checklist">
-    <!-- Step 1: Microphone -->
-    <div class="checklist-item" id="micStep">
-      <div class="checklist-header">
-        <div class="checklist-icon pending" id="micIcon">1</div>
-        <span class="checklist-title">Microphone Access</span>
-        <button class="btn-action btn-small" id="micBtn" style="display: none;">Grant</button>
+  <!-- 2 · Permissions -->
+  <div class="screen" id="s-perms">
+    <h1>Permissions</h1>
+    <p class="sub">Two switches so Whisp can hear you and type for you.</p>
+    <div class="group">
+      <div class="row">
+        <span class="nm">Microphone</span>
+        <span class="state-wait" id="micState">Checking…</span>
+        <button class="btn" id="micBtn" style="display:none">Grant</button>
       </div>
-      <div class="checklist-content">
-        <p class="checklist-desc" id="micDesc">Checking microphone access...</p>
-      </div>
-    </div>
-
-    <!-- Step 2: Accessibility -->
-    <div class="checklist-item" id="accessStep">
-      <div class="checklist-header">
-        <div class="checklist-icon pending" id="accessIcon">2</div>
-        <span class="checklist-title">Accessibility Permission</span>
-        <button class="btn-action btn-small" id="accessBtn" style="display: none;">Grant</button>
-      </div>
-      <div class="checklist-content">
-        <p class="checklist-desc" id="accessDesc">Checking accessibility permission...</p>
+      <div class="row">
+        <span class="nm">Accessibility</span>
+        <span class="state-wait" id="accState">Checking…</span>
+        <button class="btn" id="accBtn" style="display:none">Grant</button>
       </div>
     </div>
-
-    <!-- Step 3: API Key -->
-    <div class="checklist-item" id="apiStep">
-      <div class="checklist-header">
-        <div class="checklist-icon pending" id="apiIcon">3</div>
-        <span class="checklist-title">Transcription API</span>
-      </div>
-      <div class="checklist-content">
-        <p class="checklist-desc" id="apiDesc">Select your provider and enter API key</p>
-
-        <!-- Groq Provider Card -->
-        <div class="provider-card selected" id="groqCard" data-provider="groq">
-          <div class="provider-header">
-            <input type="radio" name="provider" class="provider-radio" id="radioGroq" checked>
-            <span class="provider-name">Groq</span>
-            <span class="provider-badge badge-fast">FAST</span>
-            <span class="provider-badge badge-default">DEFAULT</span>
-          </div>
-          <div class="provider-content">
-            <div class="api-key-row">
-              <input type="password" id="groqKeyInput" placeholder="gsk_..." autocomplete="off">
-              <button class="btn-action btn-small" id="groqTestBtn">Test</button>
-            </div>
-            <p class="input-hint">Get key from <a href="#" id="groqLink">console.groq.com</a> (free)</p>
-          </div>
-        </div>
-
-        <!-- OpenAI Provider Card -->
-        <div class="provider-card" id="openaiCard" data-provider="openai">
-          <div class="provider-header">
-            <input type="radio" name="provider" class="provider-radio" id="radioOpenai">
-            <span class="provider-name">OpenAI</span>
-            <span class="provider-badge badge-default">DEFAULT</span>
-          </div>
-          <div class="provider-content">
-            <div class="api-key-row">
-              <input type="password" id="apiKeyInput" placeholder="sk-..." autocomplete="off">
-              <button class="btn-action btn-small" id="apiTestBtn">Test</button>
-            </div>
-            <p class="input-hint">Get key from <a href="#" id="openaiLink">platform.openai.com/api-keys</a></p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Step 4: Test Recording -->
-    <div class="checklist-item" id="testStep">
-      <div class="checklist-header">
-        <div class="checklist-icon pending" id="testIcon">4</div>
-        <span class="checklist-title">Test Recording</span>
-      </div>
-      <div class="checklist-content">
-        <p class="checklist-desc" id="testDesc">Complete the steps above to try a test recording</p>
-        <div class="test-row" id="testStartRow">
-          <button class="btn-action btn-small" id="testRecordBtn" disabled>Try It</button>
-        </div>
-        <div class="test-row" id="testRecordingRow" style="display: none;">
-          <div class="recording-indicator">
-            <div class="recording-dot"></div>
-            <span>Recording...</span>
-          </div>
-          <button class="btn-action btn-small btn-done" id="testDoneBtn">Done</button>
-        </div>
-        <div class="test-row" id="testTranscribingRow" style="display: none;">
-          <span style="color: #888; font-size: 12px;">Transcribing...</span>
-        </div>
-        <div class="test-result" id="testResult" style="display: none;"></div>
-      </div>
-    </div>
+    <p class="help" id="permHelp"></p>
+    <button class="btn btn-wide" id="btnPerms" disabled>Continue</button>
+    <div class="dots"><i></i><i class="on"></i><i></i><i></i></div>
   </div>
 
-  <!-- Success Section - shown after all steps complete -->
-  <div class="success-section" id="successSection">
-    <div class="success-header">
-      <span style="font-size: 20px;">🎉</span>
-      <h2>You're all set!</h2>
+  <!-- 3 · Connect -->
+  <div class="screen" id="s-connect">
+    <h1>Connect</h1>
+    <p class="sub">Your audio goes to the provider you pick, on your own key.</p>
+    <div class="seg">
+      <button type="button" id="segGroq">Groq</button>
+      <button type="button" id="segOpenai">OpenAI</button>
     </div>
-    <div class="success-content">
-      <div class="success-row">
-        <img src="icons/tray-idle.png" alt="Whisp icon" id="trayIconPreview">
-        <span>Find Whisp in your <strong>menu bar</strong> (top right)</span>
-      </div>
-      <div class="success-row">
-        <span class="icon">⌨️</span>
-        <span>Press <span class="kbd">Ctrl</span> + <span class="kbd">Space</span> to start/stop recording</span>
-      </div>
-      <div class="success-row">
-        <span class="icon">⚙️</span>
-        <span>Access Settings anytime from the menu</span>
+    <div class="group">
+      <div class="keyrow">
+        <input class="keyinput" type="password" id="keyInput" autocomplete="off">
+        <span class="kdot" id="kdot"></span>
       </div>
     </div>
+    <p class="help">Validates as you type. Get a free key at <a id="keyLink"></a></p>
+    <button class="btn btn-wide" id="btnConnect" disabled>Continue</button>
+    <div class="dots"><i></i><i></i><i class="on"></i><i></i></div>
   </div>
 
-  <div class="footer">
-    <button class="btn-start" id="startBtn" disabled>Get Started</button>
+  <!-- 4 · Try it -->
+  <div class="screen" id="s-try">
+    <h1>Try it</h1>
+    <p class="sub">Click into the box, press <kbd id="tryKbd">⌃ Space</kbd>, and say something. Press it again to stop.</p>
+    <textarea id="tryBox" placeholder="Your words land here, and later wherever your cursor is."></textarea>
+    <p class="help" style="margin-top:6px">That is the whole app.</p>
+    <button class="btn btn-wide" id="btnDone">Get Started</button>
+    <div class="dots"><i></i><i></i><i></i><i class="on"></i></div>
+  </div>
+
+  <!-- Guide (reopen from menu) -->
+  <div class="screen" id="s-guide">
+    <div class="g-title"><h1>Guide</h1><span class="g-open-settings" id="openSettings">Settings…</span></div>
+    <p class="sub">Everything Whisp answers to.</p>
+    <div class="group">
+      <div class="row"><span class="nm">Record</span><kbd id="gKbd">⌃ Space</kbd></div>
+      <div class="row"><span class="nm">Stop</span><kbd>⏎</kbd></div>
+      <div class="row"><span class="nm">Cancel, keep in history</span><kbd>esc</kbd></div>
+      <div class="row"><span class="nm">Recent transcriptions</span><span class="state-wait">Menubar menu</span></div>
+      <div class="row"><span class="nm">Provider</span><span class="state-wait" id="gProvider">–</span></div>
+    </div>
   </div>
 
   <script>
-    const state = {
-      microphone: false,
-      accessibility: false,
-      apiKey: false,
-      testRecording: false,
-      isRecording: false,
-      provider: 'groq'
-    };
+    const api = window.electronAPI;
+    let config = {};
+    let provider = 'groq';
+    let keyDebounce = null;
+    let permPoll = null;
+    const state = { mic: false, acc: false, key: false };
 
-    // Elements
-    const micIcon = document.getElementById('micIcon');
-    const micDesc = document.getElementById('micDesc');
+    const screens = ['s-welcome', 's-perms', 's-connect', 's-try', 's-guide'];
+    function show(id) {
+      screens.forEach((s) => document.getElementById(s).classList.toggle('visible', s === id));
+      if (id !== 's-perms' && permPoll) { clearInterval(permPoll); permPoll = null; }
+    }
+
+    const KEY_GLYPHS = { Control: '⌃', Alt: '⌥', Shift: '⇧', Meta: '⌘', Command: '⌘', CommandOrControl: '⌘' };
+    function displayShortcut(acc) {
+      return (acc || 'Control+Space').split('+').map((p) => KEY_GLYPHS[p] || p).join(' ');
+    }
+
+    // --- Permissions ---
+    const micState = document.getElementById('micState');
     const micBtn = document.getElementById('micBtn');
-    const micStep = document.getElementById('micStep');
+    const accState = document.getElementById('accState');
+    const accBtn = document.getElementById('accBtn');
+    const btnPerms = document.getElementById('btnPerms');
 
-    const accessIcon = document.getElementById('accessIcon');
-    const accessDesc = document.getElementById('accessDesc');
-    const accessBtn = document.getElementById('accessBtn');
-    const accessStep = document.getElementById('accessStep');
-
-    const apiIcon = document.getElementById('apiIcon');
-    const apiDesc = document.getElementById('apiDesc');
-    const apiKeyInput = document.getElementById('apiKeyInput');
-    const apiTestBtn = document.getElementById('apiTestBtn');
-    const groqKeyInput = document.getElementById('groqKeyInput');
-    const groqTestBtn = document.getElementById('groqTestBtn');
-    const apiStep = document.getElementById('apiStep');
-    const groqCard = document.getElementById('groqCard');
-    const openaiCard = document.getElementById('openaiCard');
-    const radioGroq = document.getElementById('radioGroq');
-    const radioOpenai = document.getElementById('radioOpenai');
-
-    const testIcon = document.getElementById('testIcon');
-    const testDesc = document.getElementById('testDesc');
-    const testRecordBtn = document.getElementById('testRecordBtn');
-    const testDoneBtn = document.getElementById('testDoneBtn');
-    const testStartRow = document.getElementById('testStartRow');
-    const testRecordingRow = document.getElementById('testRecordingRow');
-    const testTranscribingRow = document.getElementById('testTranscribingRow');
-    const testResult = document.getElementById('testResult');
-    const testStep = document.getElementById('testStep');
-
-    const successSection = document.getElementById('successSection');
-    const startBtn = document.getElementById('startBtn');
-    const openaiLink = document.getElementById('openaiLink');
-    const groqLink = document.getElementById('groqLink');
-
-    function setCompleted(icon, step) {
-      icon.className = 'checklist-icon completed';
-      icon.innerHTML = '✓';
-      step.classList.add('completed');
+    function renderPerms() {
+      micState.style.display = state.mic ? '' : 'none';
+      micBtn.style.display = state.mic ? 'none' : '';
+      if (state.mic) { micState.textContent = 'Granted'; micState.className = 'state-ok'; }
+      accState.style.display = state.acc ? '' : 'none';
+      accBtn.style.display = state.acc ? 'none' : '';
+      if (state.acc) { accState.textContent = 'Granted'; accState.className = 'state-ok'; }
+      btnPerms.disabled = !(state.mic && state.acc);
     }
-
-    // Provider switching
-    function setProvider(provider) {
-      state.provider = provider;
-      groqCard.classList.toggle('selected', provider === 'groq');
-      openaiCard.classList.toggle('selected', provider === 'openai');
-      radioGroq.checked = provider === 'groq';
-      radioOpenai.checked = provider === 'openai';
-
-      // Reset API key state when switching (unless already valid for new provider)
-      if (!state.apiKey) {
-        apiDesc.textContent = provider === 'openai'
-          ? 'Enter your OpenAI API key'
-          : 'Enter your Groq API key (free)';
-      }
+    async function checkPerms() {
+      try { state.mic = (await api.checkMicrophone()).granted; } catch (e) { state.mic = false; }
+      try { state.acc = (await api.checkAccessibility()).granted; } catch (e) { state.acc = false; }
+      renderPerms();
     }
-
-    // Click on card to select provider
-    groqCard.addEventListener('click', (e) => {
-      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
-        if (state.provider !== 'groq') {
-          state.apiKey = false;
-          apiIcon.className = 'checklist-icon pending';
-          apiIcon.innerHTML = '3';
-          apiStep.classList.remove('completed');
-          apiDesc.classList.remove('success');
-          setProvider('groq');
-          checkAllComplete();
-        }
-      }
-    });
-
-    openaiCard.addEventListener('click', (e) => {
-      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
-        if (state.provider !== 'openai') {
-          state.apiKey = false;
-          apiIcon.className = 'checklist-icon pending';
-          apiIcon.innerHTML = '3';
-          apiStep.classList.remove('completed');
-          apiDesc.classList.remove('success');
-          setProvider('openai');
-          checkAllComplete();
-        }
-      }
-    });
-
-    // Radio button clicks
-    radioGroq.addEventListener('change', () => {
-      if (state.provider !== 'groq') {
-        state.apiKey = false;
-        apiIcon.className = 'checklist-icon pending';
-        apiIcon.innerHTML = '3';
-        apiStep.classList.remove('completed');
-        apiDesc.classList.remove('success');
-        setProvider('groq');
-        checkAllComplete();
-      }
-    });
-
-    radioOpenai.addEventListener('change', () => {
-      if (state.provider !== 'openai') {
-        state.apiKey = false;
-        apiIcon.className = 'checklist-icon pending';
-        apiIcon.innerHTML = '3';
-        apiStep.classList.remove('completed');
-        apiDesc.classList.remove('success');
-        setProvider('openai');
-        checkAllComplete();
-      }
-    });
-
-    function checkAllComplete() {
-      const allComplete = state.microphone && state.accessibility && state.apiKey && state.testRecording;
-      startBtn.disabled = !allComplete;
-
-      if (allComplete && !successSection.classList.contains('visible')) {
-        successSection.classList.add('visible');
-        // MutationObserver will auto-resize when success section appears
-      }
-
-      // Enable test recording if first 3 steps are complete
-      const canTest = state.microphone && state.accessibility && state.apiKey && !state.testRecording;
-      testRecordBtn.disabled = !canTest || state.isRecording;
-
-      if (canTest && !state.testRecording) {
-        testDesc.textContent = 'Try a quick 3-second recording to make sure everything works';
-      }
-    }
-
-    // Check microphone
-    async function checkMicrophone() {
-      try {
-        const result = await window.electronAPI.checkMicrophone();
-        if (result.granted) {
-          state.microphone = true;
-          setCompleted(micIcon, micStep);
-          micDesc.textContent = 'Microphone access granted';
-          micDesc.classList.add('success');
-          micBtn.style.display = 'none';
-        } else {
-          micDesc.textContent = 'Allow Whisp to use your microphone for voice recording';
-          micBtn.style.display = 'block';
-        }
-      } catch (err) {
-        micDesc.textContent = 'Allow Whisp to use your microphone for voice recording';
-        micBtn.style.display = 'block';
-      }
-      checkAllComplete();
-    }
-
-    // Check accessibility
-    async function checkAccessibility() {
-      try {
-        const result = await window.electronAPI.checkAccessibility();
-        if (result.granted) {
-          state.accessibility = true;
-          setCompleted(accessIcon, accessStep);
-          accessDesc.textContent = 'Accessibility permission granted';
-          accessDesc.classList.add('success');
-          accessBtn.style.display = 'none';
-        } else {
-          accessDesc.textContent = 'Required for keyboard shortcuts and auto-paste';
-          accessBtn.style.display = 'block';
-        }
-      } catch (err) {
-        accessDesc.textContent = 'Required for keyboard shortcuts and auto-paste';
-        accessBtn.style.display = 'block';
-      }
-      checkAllComplete();
-    }
-
-    // Load existing API key
-    async function loadConfig() {
-      try {
-        const config = await window.electronAPI.getConfig();
-        if (config.transcriptionProvider) {
-          setProvider(config.transcriptionProvider);
-        }
-        if (config.apiKey) {
-          apiKeyInput.value = config.apiKey;
-        }
-        if (config.groqApiKey) {
-          groqKeyInput.value = config.groqApiKey;
-        }
-        // Auto-test the key for the current provider
-        if (state.provider === 'openai' && config.apiKey) {
-          testOpenAIKey();
-        } else if (state.provider === 'groq' && config.groqApiKey) {
-          testGroqKey();
-        }
-      } catch (err) {
-        console.error('Failed to load config:', err);
-      }
-    }
-
-    // Test OpenAI API key
-    async function testOpenAIKey() {
-      const apiKey = apiKeyInput.value.trim();
-      if (!apiKey) {
-        apiDesc.textContent = 'Enter your OpenAI API key above';
-        return;
-      }
-
-      apiTestBtn.disabled = true;
-      apiTestBtn.textContent = '...';
-      apiDesc.textContent = 'Testing API key...';
-
-      try {
-        const result = await window.electronAPI.testApiKey(apiKey);
-        if (result.success) {
-          state.apiKey = true;
-          setCompleted(apiIcon, apiStep);
-          apiDesc.textContent = '🎉 API key valid! Ready to record.';
-          apiDesc.classList.add('success');
-          await window.electronAPI.saveConfig({ apiKey, transcriptionProvider: 'openai' });
-        } else {
-          apiDesc.textContent = result.error || 'Invalid API key. Please check and try again.';
-        }
-      } catch (err) {
-        apiDesc.textContent = 'Failed to test API key. Check your connection.';
-      }
-
-      apiTestBtn.disabled = false;
-      apiTestBtn.textContent = 'Test';
-      checkAllComplete();
-    }
-
-    // Test Groq API key
-    async function testGroqKey() {
-      const groqApiKey = groqKeyInput.value.trim();
-      if (!groqApiKey) {
-        apiDesc.textContent = 'Enter your Groq API key above';
-        return;
-      }
-
-      groqTestBtn.disabled = true;
-      groqTestBtn.textContent = '...';
-      apiDesc.textContent = 'Testing API key...';
-
-      try {
-        const result = await window.electronAPI.testGroqApiKey(groqApiKey);
-        if (result.success) {
-          state.apiKey = true;
-          setCompleted(apiIcon, apiStep);
-          apiDesc.textContent = '🎉 API key valid! Ready to record.';
-          apiDesc.classList.add('success');
-          await window.electronAPI.saveConfig({ groqApiKey, transcriptionProvider: 'groq' });
-        } else {
-          apiDesc.textContent = result.error || 'Invalid API key. Please check and try again.';
-        }
-      } catch (err) {
-        apiDesc.textContent = 'Failed to test API key. Check your connection.';
-      }
-
-      groqTestBtn.disabled = false;
-      groqTestBtn.textContent = 'Test';
-      checkAllComplete();
-    }
-
-    // Request microphone
     micBtn.addEventListener('click', async () => {
       micBtn.disabled = true;
-      micBtn.textContent = '...';
       try {
-        const result = await window.electronAPI.requestMicrophone();
-        if (result.granted) {
-          state.microphone = true;
-          setCompleted(micIcon, micStep);
-          micDesc.textContent = 'Microphone access granted';
-          micDesc.classList.add('success');
-          micBtn.style.display = 'none';
-        } else {
-          micDesc.textContent = 'Permission denied. Please allow in System Settings.';
-        }
-      } catch (err) {
-        micDesc.textContent = 'Failed to request permission';
-      }
+        const r = await api.requestMicrophone();
+        state.mic = r.granted;
+        if (!r.granted) document.getElementById('permHelp').textContent = 'Denied. Allow the microphone in System Settings, then come back.';
+      } catch (e) {}
       micBtn.disabled = false;
-      micBtn.textContent = 'Grant';
-      checkAllComplete();
+      renderPerms();
     });
-
-    // Request accessibility
-    accessBtn.addEventListener('click', async () => {
-      accessBtn.disabled = true;
-      accessBtn.textContent = '...';
+    accBtn.addEventListener('click', async () => {
+      accBtn.disabled = true;
       try {
-        await window.electronAPI.requestAccessibility();
-        accessDesc.textContent = 'Toggle Whisp ON in System Settings, then return here';
-
-        // Poll for permission
-        const pollInterval = setInterval(async () => {
-          const result = await window.electronAPI.checkAccessibility();
-          if (result.granted) {
-            clearInterval(pollInterval);
-            state.accessibility = true;
-            setCompleted(accessIcon, accessStep);
-            accessDesc.textContent = 'Accessibility permission granted';
-            accessDesc.classList.add('success');
-            accessBtn.style.display = 'none';
-            checkAllComplete();
-          }
-        }, 1000);
-
-        setTimeout(() => clearInterval(pollInterval), 60000);
-      } catch (err) {
-        accessDesc.textContent = 'Failed to request permission';
-      }
-      accessBtn.disabled = false;
-      accessBtn.textContent = 'Grant';
+        await api.requestAccessibility();
+        document.getElementById('permHelp').textContent = 'Turn Whisp on in the System Settings list, then come back here.';
+      } catch (e) {}
+      accBtn.disabled = false;
     });
+    function startPermPoll() {
+      if (permPoll) clearInterval(permPoll);
+      permPoll = setInterval(checkPerms, 1200);
+    }
 
-    // API key events - OpenAI
-    apiTestBtn.addEventListener('click', testOpenAIKey);
-    apiKeyInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') testOpenAIKey();
-    });
+    // --- Connect ---
+    const segGroq = document.getElementById('segGroq');
+    const segOpenai = document.getElementById('segOpenai');
+    const keyInput = document.getElementById('keyInput');
+    const kdot = document.getElementById('kdot');
+    const keyLink = document.getElementById('keyLink');
+    const btnConnect = document.getElementById('btnConnect');
 
-    openaiLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      require('electron').shell.openExternal('https://platform.openai.com/api-keys');
-    });
+    const PROVIDERS = {
+      groq: { keyField: 'groqApiKey', placeholder: 'gsk_…', url: 'https://console.groq.com/keys', label: 'console.groq.com', test: (k) => api.testGroqApiKey(k) },
+      openai: { keyField: 'apiKey', placeholder: 'sk-…', url: 'https://platform.openai.com/api-keys', label: 'platform.openai.com', test: (k) => api.testApiKey(k) },
+    };
+    function renderProvider() {
+      segGroq.classList.toggle('on', provider === 'groq');
+      segOpenai.classList.toggle('on', provider === 'openai');
+      const p = PROVIDERS[provider];
+      keyInput.value = config[p.keyField] || '';
+      keyInput.placeholder = p.placeholder;
+      keyLink.textContent = p.label;
+      state.key = false;
+      btnConnect.disabled = true;
+      kdot.className = 'kdot' + (keyInput.value ? ' busy' : '');
+      if (keyInput.value) validateKey();
+    }
+    function setProvider(p) {
+      provider = p;
+      config.transcriptionProvider = p;
+      api.saveConfig({ transcriptionProvider: p });
+      renderProvider();
+    }
+    segGroq.addEventListener('click', () => setProvider('groq'));
+    segOpenai.addEventListener('click', () => setProvider('openai'));
 
-    // API key events - Groq
-    groqTestBtn.addEventListener('click', testGroqKey);
-    groqKeyInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') testGroqKey();
-    });
-
-    groqLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      require('electron').shell.openExternal('https://console.groq.com/keys');
-    });
-
-    // Test recording - Start
-    testRecordBtn.addEventListener('click', async () => {
-      if (state.isRecording || state.testRecording) return;
-
+    async function validateKey() {
+      const p = PROVIDERS[provider];
+      const key = keyInput.value.trim();
+      if (!key) { kdot.className = 'kdot'; state.key = false; btnConnect.disabled = true; return; }
+      kdot.className = 'kdot busy';
       try {
-        const result = await window.electronAPI.startTestRecording();
-        if (result.success) {
-          state.isRecording = true;
-          testDesc.textContent = 'Speak now, then click Done';
-          testStartRow.style.display = 'none';
-          testRecordingRow.style.display = 'flex';
-          testResult.style.display = 'none';
-        } else {
-          testDesc.textContent = result.error || 'Failed to start recording';
-        }
+        const result = await p.test(key);
+        if (keyInput.value.trim() !== key) return;
+        state.key = !!result.success;
+        kdot.className = 'kdot ' + (result.success ? 'ok' : 'bad');
+        btnConnect.disabled = !result.success;
       } catch (err) {
-        testDesc.textContent = 'Failed to start recording';
+        kdot.className = 'kdot bad';
       }
+    }
+    keyInput.addEventListener('input', () => {
+      const p = PROVIDERS[provider];
+      config[p.keyField] = keyInput.value.trim();
+      api.saveConfig({ [p.keyField]: keyInput.value.trim() });
+      if (keyDebounce) clearTimeout(keyDebounce);
+      keyDebounce = setTimeout(validateKey, 700);
     });
+    keyLink.addEventListener('click', (e) => { e.preventDefault(); api.openExternal(PROVIDERS[provider].url); });
 
-    // Test recording - Done
-    testDoneBtn.addEventListener('click', async () => {
-      if (!state.isRecording) return;
-
-      testRecordingRow.style.display = 'none';
-      testTranscribingRow.style.display = 'flex';
-      testDesc.textContent = 'Processing your recording...';
-
-      try {
-        const result = await window.electronAPI.stopTestRecording();
-
-        testTranscribingRow.style.display = 'none';
-
-        if (result.success && result.text) {
-          state.testRecording = true;
-          state.isRecording = false;
-          setCompleted(testIcon, testStep);
-          testDesc.textContent = 'Test successful!';
-          testDesc.classList.add('success');
-          testResult.textContent = `"${result.text}"`;
-          testResult.style.display = 'block';
-          testStartRow.style.display = 'none';
-        } else {
-          state.isRecording = false;
-          testDesc.textContent = result.error || 'No speech detected. Try again?';
-          testStartRow.style.display = 'flex';
-        }
-      } catch (err) {
-        state.isRecording = false;
-        testTranscribingRow.style.display = 'none';
-        testDesc.textContent = 'Recording failed. Try again?';
-        testStartRow.style.display = 'flex';
-      }
-
-      checkAllComplete();
+    // --- Navigation ---
+    document.getElementById('btnWelcome').addEventListener('click', () => { show('s-perms'); checkPerms(); startPermPoll(); });
+    btnPerms.addEventListener('click', () => show('s-connect'));
+    btnConnect.addEventListener('click', () => {
+      show('s-try');
+      document.getElementById('tryBox').focus();
     });
+    document.getElementById('btnDone').addEventListener('click', () => api.completeOnboarding());
+    document.getElementById('openSettings').addEventListener('click', () => api.openSettingsWindow());
 
-    // Get Started
-    startBtn.addEventListener('click', async () => {
-      try {
-        await window.electronAPI.completeOnboarding();
-      } catch (err) {
-        console.error('Failed to complete onboarding:', err);
-      }
+    // --- Init ---
+    const params = new URLSearchParams(location.search);
+    api.getConfig().then((cfg) => {
+      config = cfg || {};
+      provider = config.transcriptionProvider || 'groq';
+      document.getElementById('tryKbd').textContent = displayShortcut(config.shortcut);
+      document.getElementById('gKbd').textContent = displayShortcut(config.shortcut);
+      const p = PROVIDERS[provider];
+      document.getElementById('gProvider').textContent =
+        (provider === 'groq' ? 'Groq' : 'OpenAI') + (config[p.keyField] ? '' : ' · no key');
+      renderProvider();
+      if (params.get('screen') === 'guide') show('s-guide');
+      else show('s-welcome');
     });
-
-    // Initialize
-    checkMicrophone();
-    checkAccessibility();
-    loadConfig();
   </script>
 </body>
 </html>

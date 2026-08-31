@@ -45,4 +45,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Onboarding - Complete
   completeOnboarding: () => ipcRenderer.invoke('complete-onboarding'),
+
+  // Links + window hops
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  openSettingsWindow: () => ipcRenderer.send('open-settings'),
 });
