@@ -55,7 +55,7 @@ function playSound(soundName) {
 // so the key is re-entered once in Settings.
 (function migrateLegacyUserData() {
   try {
-    if (process.env.LEISE_ONBOARD_TEST) return; // the probe simulates a truly fresh install
+    if (process.env.LEISE_ONBOARD_TEST || process.env.LEISE_FRESH) return; // fresh-install simulations
 
     const fresh = !fs.existsSync(path.join(app.getPath('userData'), 'config.json'));
     if (!fresh) return;
@@ -86,6 +86,11 @@ if (process.env.LEISE_FOCUS_TEST) {
 }
 if (process.env.LEISE_ONBOARD_TEST) {
   app.setPath('userData', path.join(app.getPath('temp'), 'leise-onboard-test-' + process.pid));
+}
+// LEISE_FRESH: interactive fresh-install demo — isolated userData, no legacy
+// migration, otherwise the real app.
+if (process.env.LEISE_FRESH) {
+  app.setPath('userData', path.join(app.getPath('temp'), 'leise-fresh-demo'));
 }
 
 const configPath = path.join(app.getPath('userData'), 'config.json');
