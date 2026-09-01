@@ -55,6 +55,8 @@ function playSound(soundName) {
 // so the key is re-entered once in Settings.
 (function migrateLegacyUserData() {
   try {
+    if (process.env.LEISE_ONBOARD_TEST) return; // the probe simulates a truly fresh install
+
     const fresh = !fs.existsSync(path.join(app.getPath('userData'), 'config.json'));
     if (!fresh) return;
     const appSupport = path.dirname(app.getPath('userData'));
@@ -76,6 +78,15 @@ function playSound(soundName) {
     console.error('[main] legacy userData migration failed:', err);
   }
 })();
+
+// Test probes get an isolated userData; this must run before configPath is
+// derived from it.
+if (process.env.LEISE_FOCUS_TEST) {
+  app.setPath('userData', path.join(app.getPath('temp'), 'leise-focus-test'));
+}
+if (process.env.LEISE_ONBOARD_TEST) {
+  app.setPath('userData', path.join(app.getPath('temp'), 'leise-onboard-test-' + process.pid));
+}
 
 const configPath = path.join(app.getPath('userData'), 'config.json');
 const historyPath = path.join(app.getPath('userData'), 'history.json');
@@ -215,10 +226,6 @@ function appendToHistory(text, source) {
 
 function clearHistory() {
   saveHistory([]);
-}
-
-if (process.env.LEISE_FOCUS_TEST) {
-  app.setPath('userData', path.join(app.getPath('temp'), 'leise-focus-test'));
 }
 
 let config = loadConfig();
@@ -1306,6 +1313,7 @@ ipcMain.handle('stop-test-recording', async () => {
 ipcMain.handle('complete-onboarding', () => {
   config.onboardingComplete = true;
   saveConfig(config);
+  if (app.dock) app.dock.hide();
 
   if (onboardingWindow && !onboardingWindow.isDestroyed()) {
     onboardingWindow.close();
@@ -1319,19 +1327,23 @@ ipcMain.handle('complete-onboarding', () => {
 // ============================================
 
 app.whenReady().then(() => {
-  // Check Accessibility permission
-  systemPreferences.isTrustedAccessibilityClient(true);
-
   applyAppearance();
   hydrateKeys();
   createRecorderWindow();
   createTray();
 
-  // Show onboarding if not completed, otherwise check for the active key
+  // First launch: the app must be unmissable. The dock icon shows for the
+  // duration of onboarding (it hides again after — menubar app otherwise),
+  // the window comes to the front, and the accessibility prompt is NOT
+  // fired here: onboarding introduces it before asking.
   if (!config.onboardingComplete) {
+    if (app.dock) app.dock.show();
     createOnboardingWindow();
+    app.focus({ steal: true });
+    if (onboardingWindow) onboardingWindow.show();
   } else if (!hasActiveKey()) {
     createSettingsWindow();
+    app.focus({ steal: true });
   }
 
   // Register global shortcut
@@ -1397,6 +1409,29 @@ if (process.env.LEISE_FOCUS_TEST) {
     const after = app.isActive ? app.isActive() : 'n/a';
     const focused = overlayWindow && overlayWindow.isFocused();
     console.log(`[focus-test] activeBefore=${before} activeAfter=${after} overlayFocused=${focused}`);
+    app.quit();
+  });
+}
+
+// Fresh-install onboarding walkthrough: isolated userData, real first-run
+// path, capture of every screen.
+if (process.env.LEISE_ONBOARD_TEST) {
+  app.whenReady().then(async () => {
+    const outDir = process.env.WHISP_UITEST_DIR || app.getPath('temp');
+    await new Promise((r) => setTimeout(r, 1500));
+    const screens = ['s-welcome', 's-perms', 's-connect', 's-keys', 's-try', 's-guide'];
+    for (const id of screens) {
+      await onboardingWindow.webContents.executeJavaScript(`
+        (() => {
+          document.querySelectorAll('.screen').forEach(s => s.classList.toggle('visible', s.id === '${id}'));
+          const s = document.querySelector('.screen.visible');
+          window.electronAPI.reportHeight(s.scrollHeight + 56);
+        })()`);
+      await new Promise((r) => setTimeout(r, 450));
+      const img = await onboardingWindow.webContents.capturePage();
+      fs.writeFileSync(path.join(outDir, `onboard-${id}.png`), img.toPNG());
+    }
+    console.log('[onboard-test] captured', screens.length, 'screens; firstRun onboarding shown:', !!onboardingWindow);
     app.quit();
   });
 }

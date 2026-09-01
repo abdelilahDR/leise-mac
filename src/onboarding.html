@@ -119,7 +119,7 @@
     <h1 id="heroName">Leise</h1>
     <p class="sub">Voice to text, anywhere you type.</p>
     <button class="btn btn-wide" id="btnWelcome">Continue</button>
-    <div class="dots"><i class="on"></i><i></i><i></i><i></i></div>
+    <div class="dots"><i class="on"></i><i></i><i></i><i></i><i></i></div>
   </div>
 
   <!-- 2 · Permissions -->
@@ -140,7 +140,7 @@
     </div>
     <p class="help" id="permHelp"></p>
     <button class="btn btn-wide" id="btnPerms" disabled>Continue</button>
-    <div class="dots"><i></i><i class="on"></i><i></i><i></i></div>
+    <div class="dots"><i></i><i class="on"></i><i></i><i></i><i></i></div>
   </div>
 
   <!-- 3 · Connect -->
@@ -159,17 +159,31 @@
     </div>
     <p class="help">Validates as you type. Get a free key at <a id="keyLink"></a></p>
     <button class="btn btn-wide" id="btnConnect" disabled>Continue</button>
-    <div class="dots"><i></i><i></i><i class="on"></i><i></i></div>
+    <div class="dots"><i></i><i></i><i class="on"></i><i></i><i></i></div>
   </div>
 
-  <!-- 4 · Try it -->
+  <!-- 4 · Shortcuts -->
+  <div class="screen" id="s-keys">
+    <h1>Three keys</h1>
+    <p class="sub">This is all of it. Worth ten seconds before your first try.</p>
+    <div class="group">
+      <div class="row"><span class="nm">Record, and stop</span><kbd id="kKbd">⌃ Space</kbd></div>
+      <div class="row"><span class="nm">Stop, hands on keyboard</span><kbd>Enter</kbd></div>
+      <div class="row"><span class="nm">Cancel, keep in history</span><kbd>esc</kbd></div>
+    </div>
+    <p class="help">Change the record shortcut anytime in Settings.</p>
+    <button class="btn btn-wide" id="btnKeys">Continue</button>
+    <div class="dots"><i></i><i></i><i></i><i class="on"></i><i></i></div>
+  </div>
+
+  <!-- 5 · Try it -->
   <div class="screen" id="s-try">
     <h1>Try it</h1>
     <p class="sub">Click into the box, press <kbd id="tryKbd">⌃ Space</kbd>, and say something. Stop with the same keys, or <kbd>Enter</kbd>.</p>
     <textarea id="tryBox" placeholder="Your words land here, and later wherever your cursor is."></textarea>
     <p class="help" style="margin-top:6px">That is the whole app.</p>
     <button class="btn btn-wide" id="btnDone">Get Started</button>
-    <div class="dots"><i></i><i></i><i></i><i class="on"></i></div>
+    <div class="dots"><i></i><i></i><i></i><i></i><i class="on"></i></div>
   </div>
 
   <!-- Guide (reopen from menu) -->
@@ -199,7 +213,7 @@
     let permPoll = null;
     const state = { mic: false, acc: false, key: false };
 
-    const screens = ['s-welcome', 's-perms', 's-connect', 's-try', 's-guide'];
+    const screens = ['s-welcome', 's-perms', 's-connect', 's-keys', 's-try', 's-guide'];
     function show(id) {
       screens.forEach((s) => document.getElementById(s).classList.toggle('visible', s === id));
       if (id !== 's-perms' && permPoll) { clearInterval(permPoll); permPoll = null; }
@@ -315,7 +329,8 @@
     // --- Navigation ---
     document.getElementById('btnWelcome').addEventListener('click', () => { show('s-perms'); checkPerms(); startPermPoll(); });
     btnPerms.addEventListener('click', () => show('s-connect'));
-    btnConnect.addEventListener('click', () => {
+    btnConnect.addEventListener('click', () => show('s-keys'));
+    document.getElementById('btnKeys').addEventListener('click', () => {
       show('s-try');
       document.getElementById('tryBox').focus();
     });
@@ -332,6 +347,7 @@
       config = cfg || {};
       provider = config.transcriptionProvider || 'groq';
       document.getElementById('tryKbd').textContent = displayShortcut(config.shortcut);
+      document.getElementById('kKbd').textContent = displayShortcut(config.shortcut);
       document.getElementById('gKbd').textContent = displayShortcut(config.shortcut);
       const p = PROVIDERS[provider];
       document.getElementById('gProvider').textContent =
