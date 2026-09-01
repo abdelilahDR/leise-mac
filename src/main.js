@@ -217,6 +217,10 @@ function clearHistory() {
   saveHistory([]);
 }
 
+if (process.env.LEISE_FOCUS_TEST) {
+  app.setPath('userData', path.join(app.getPath('temp'), 'leise-focus-test'));
+}
+
 let config = loadConfig();
 
 // Runs once app is ready (safeStorage needs that): decrypt stored keys into
@@ -533,6 +537,9 @@ function createOverlayWindow() {
     hasShadow: false,
     type: 'panel', // macOS: doesn't activate app when shown
     // focusable: true (default) — required for click events to fire on macOS
+    show: false, // shown inactive on ready-to-show; the default show ACTIVATES
+                 // the panel and steals key focus from the user's app, which
+                 // sent the very first paste of a session into this window
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -541,6 +548,9 @@ function createOverlayWindow() {
 
   forwardRendererConsole('overlay', overlayWindow);
   overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
+  overlayWindow.once('ready-to-show', () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive();
+  });
   overlayWindow.setVisibleOnAllWorkspaces(true);
 
   // Save position when user moves the overlay
@@ -914,6 +924,12 @@ function insertText(text) {
   }
 
   const { exec } = require('child_process');
+
+  // If the overlay holds key focus (clicked or dragged), the synthesized
+  // keystroke would land in it. Hand focus back to the user's app first.
+  if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isFocused()) {
+    app.hide();
+  }
 
   // Small delay to ensure clipboard is ready, then paste
   // The paste will go to whatever app/field was last active before our overlay
@@ -1370,6 +1386,20 @@ app.on('activate', () => {
 // through its states with fake levels, captures PNGs, then quits. Lets a
 // session verify the real rendered UI without touching the mic or the APIs.
 // ============================================
+
+if (process.env.LEISE_FOCUS_TEST) {
+  app.whenReady().then(async () => {
+    await new Promise((r) => setTimeout(r, 800));
+    const before = app.isActive ? app.isActive() : 'n/a';
+    createOverlayWindow();
+    showOverlay('recording');
+    await new Promise((r) => setTimeout(r, 900));
+    const after = app.isActive ? app.isActive() : 'n/a';
+    const focused = overlayWindow && overlayWindow.isFocused();
+    console.log(`[focus-test] activeBefore=${before} activeAfter=${after} overlayFocused=${focused}`);
+    app.quit();
+  });
+}
 
 if (process.env.WHISP_UITEST) {
   app.whenReady().then(() => {
