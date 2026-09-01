@@ -21,6 +21,7 @@
     let apiKey = '';
     let groqApiKey = '';
     let transcriptionProvider = 'openai';
+    let customVocabulary = '';
     let recordingSessionId = 0;
     let currentAbortController = null;
 
@@ -110,12 +111,28 @@
       cleanupCurrentRecording();
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            sampleRate: 16000,
+        const audioConstraints = { channelCount: 1, sampleRate: 16000 };
+        try {
+          const cfg = await window.electronAPI.getConfig();
+          if (cfg && cfg.preferredInputDeviceId) {
+            audioConstraints.deviceId = { exact: cfg.preferredInputDeviceId };
           }
-        });
+          customVocabulary = ((cfg && cfg.customVocabulary) || '').trim();
+        } catch (e) { /* fall through to default device */ }
+
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        } catch (err) {
+          // Preferred mic unplugged or gone — retry on the default device
+          // rather than failing the recording.
+          if (audioConstraints.deviceId) {
+            delete audioConstraints.deviceId;
+            stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+          } else {
+            throw err;
+          }
+        }
 
         // Check if we were superseded while waiting for mic
         if (mySessionId !== recordingSessionId) {
@@ -166,16 +183,25 @@
 
           analyser.getByteFrequencyData(dataArray);
 
-          const bandSize = Math.floor(bufferLength / 5);
+          // 17 log-spaced bands, 80Hz to 5kHz. Linear splits put nearly all
+          // speech energy in the first band (one tall bar, a row of dead dots);
+          // log spacing spreads voice across every bar. The AudioContext runs
+          // at the device rate (usually 48k), so band edges are computed from
+          // the real bin width, never assumed.
+          const BAND_COUNT = 17;
+          const binHz = (audioContext.sampleRate / 2) / bufferLength;
+          const FMIN = 80, FMAX = 5000;
           const levels = [];
-          for (let i = 0; i < 5; i++) {
-            const start = i * bandSize;
-            const end = start + bandSize;
+          for (let i = 0; i < BAND_COUNT; i++) {
+            const loHz = FMIN * Math.pow(FMAX / FMIN, i / BAND_COUNT);
+            const hiHz = FMIN * Math.pow(FMAX / FMIN, (i + 1) / BAND_COUNT);
+            const start = Math.min(bufferLength - 1, Math.round(loHz / binHz));
+            const end = Math.min(bufferLength, Math.max(start + 1, Math.round(hiHz / binHz)));
             let sum = 0;
             for (let j = start; j < end; j++) {
               sum += dataArray[j];
             }
-            levels.push(sum / (bandSize * 255));
+            levels.push(sum / ((end - start) * 255));
           }
 
           window.electronAPI.sendAudioLevels(levels);
@@ -381,6 +407,11 @@
         const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
         formData.append('file', audioFile);
         formData.append('model', isGroq ? 'whisper-large-v3-turbo' : 'whisper-1');
+        // Spelling hints: Whisper biases toward terms in the prompt. Capped
+        // well under the 224-token prompt limit.
+        if (customVocabulary) {
+          formData.append('prompt', customVocabulary.slice(0, 700));
+        }
         formData.append('response_format', 'text');
         // Force English decoding so the model can't drift into multilingual
         // word-salad hallucinations on silence ("Конечно dépend Church of...").
@@ -472,7 +503,7 @@
 
         let message = error.message;
         if (error.name === 'AbortError') {
-          message = 'Timed out. Try again, or restart Whisp.';
+          message = 'Timed out. Try again, or restart Leise.';
         }
 
         // Only send error if still current session

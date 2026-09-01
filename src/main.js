@@ -12,9 +12,12 @@ const {
   screen,
   powerMonitor,
   session,
+  shell,
+  nativeTheme,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { PRODUCT_NAME } = require('./product');
 const { exec } = require('child_process');
 
 // ============================================
@@ -22,7 +25,7 @@ const { exec } = require('child_process');
 // wrong directory or the installed app is intercepting things.
 // ============================================
 console.log('═══════════════════════════════════════════════');
-console.log('  Whisp DEV — diagnostic build  ' + new Date().toISOString());
+console.log(`  ${PRODUCT_NAME} DEV — diagnostic build  ` + new Date().toISOString());
 console.log('  cwd:', process.cwd());
 console.log('  __dirname:', __dirname);
 console.log('═══════════════════════════════════════════════');
@@ -32,6 +35,7 @@ console.log('══════════════════════�
 // ============================================
 
 function playSound(soundName) {
+  if (config && config.soundsEnabled === false) return;
   // Play macOS system sounds (non-blocking)
   const soundPath = `/System/Library/Sounds/${soundName}.aiff`;
   exec(`afplay "${soundPath}"`, (error) => {
@@ -45,20 +49,103 @@ function playSound(soundName) {
 // Configuration Management
 // ============================================
 
+// One-time migration from the app's previous name: if this userData is
+// fresh and a legacy dir exists, carry config and history over. Encrypted
+// keys cannot survive the rename (safeStorage is keyed to the app name),
+// so the key is re-entered once in Settings.
+(function migrateLegacyUserData() {
+  try {
+    const fresh = !fs.existsSync(path.join(app.getPath('userData'), 'config.json'));
+    if (!fresh) return;
+    const appSupport = path.dirname(app.getPath('userData'));
+    for (const legacy of ['whisp', 'Whisp']) {
+      const oldDir = path.join(appSupport, legacy);
+      const oldConfig = path.join(oldDir, 'config.json');
+      if (fs.existsSync(oldConfig)) {
+        fs.mkdirSync(app.getPath('userData'), { recursive: true });
+        fs.copyFileSync(oldConfig, path.join(app.getPath('userData'), 'config.json'));
+        const oldHistory = path.join(oldDir, 'history.json');
+        if (fs.existsSync(oldHistory)) {
+          fs.copyFileSync(oldHistory, path.join(app.getPath('userData'), 'history.json'));
+        }
+        console.log('[main] migrated userData from', oldDir);
+        return;
+      }
+    }
+  } catch (err) {
+    console.error('[main] legacy userData migration failed:', err);
+  }
+})();
+
 const configPath = path.join(app.getPath('userData'), 'config.json');
 const historyPath = path.join(app.getPath('userData'), 'history.json');
 const HISTORY_MAX = 20;
+
+// API keys are encrypted at rest via Electron safeStorage (macOS Keychain
+// holds the encryption key). In memory config keeps plaintext for use; on
+// disk only apiKeyEnc/groqApiKeyEnc appear. Plaintext keys from older
+// versions migrate to encrypted on the first save.
+const KEY_FIELDS = ['apiKey', 'groqApiKey'];
+
+function encryptKey(value) {
+  const { safeStorage } = require('electron');
+  if (!value) return '';
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      return safeStorage.encryptString(value).toString('base64');
+    }
+  } catch (err) {
+    console.error('encryptKey failed:', err);
+  }
+  return null; // encryption unavailable — caller keeps plaintext
+}
+
+function decryptKey(enc) {
+  const { safeStorage } = require('electron');
+  if (!enc) return '';
+  try {
+    return safeStorage.decryptString(Buffer.from(enc, 'base64'));
+  } catch (err) {
+    console.error('decryptKey failed:', err);
+    return '';
+  }
+}
+
+const CONFIG_DEFAULTS = {
+  apiKey: '',
+  groqApiKey: '',
+  transcriptionProvider: 'groq',
+  shortcut: 'Control+Space',
+  soundsEnabled: true,
+  autoPasteEnabled: true,
+  preferredInputDeviceId: '',
+  appearance: 'system', // system | light | dark, drives nativeTheme.themeSource
+  customVocabulary: '', // names and jargon, passed to Whisper as a spelling hint
+};
+
+function applyAppearance() {
+  const value = ['light', 'dark'].includes(config.appearance) ? config.appearance : 'system';
+  nativeTheme.themeSource = value;
+}
 
 function loadConfig() {
   try {
     if (fs.existsSync(configPath)) {
       const data = fs.readFileSync(configPath, 'utf8');
-      return JSON.parse(data);
+      // Enc fields stay raw here: safeStorage only works after app ready,
+      // and this runs at module load. hydrateKeys() decrypts them.
+      return { ...CONFIG_DEFAULTS, ...JSON.parse(data) };
     }
   } catch (err) {
     console.error('Failed to load config:', err);
   }
-  return { apiKey: '', groqApiKey: '', transcriptionProvider: 'openai', shortcut: 'Control+Space' };
+  return { ...CONFIG_DEFAULTS };
+}
+
+// The key that actually matters is the active provider's key — a Groq-only
+// setup is fully valid (and the default).
+function hasActiveKey() {
+  return (config.transcriptionProvider === 'openai') ? !!config.apiKey : !!config.groqApiKey;
 }
 
 function saveConfig(newConfig) {
@@ -67,7 +154,15 @@ function saveConfig(newConfig) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2));
+    const onDisk = { ...newConfig };
+    for (const field of KEY_FIELDS) {
+      const enc = encryptKey(onDisk[field]);
+      if (enc !== null) {
+        if (enc) onDisk[field + 'Enc'] = enc;
+        delete onDisk[field];
+      }
+    }
+    fs.writeFileSync(configPath, JSON.stringify(onDisk, null, 2));
     return true;
   } catch (err) {
     console.error('Failed to save config:', err);
@@ -121,6 +216,19 @@ function clearHistory() {
 }
 
 let config = loadConfig();
+
+// Runs once app is ready (safeStorage needs that): decrypt stored keys into
+// memory, and if the file still holds plaintext keys, re-save to migrate.
+function hydrateKeys() {
+  let hadPlaintext = false;
+  for (const field of KEY_FIELDS) {
+    if (config[field]) hadPlaintext = true;
+    const enc = config[field + 'Enc'];
+    if (enc && !config[field]) config[field] = decryptKey(enc);
+    delete config[field + 'Enc'];
+  }
+  if (hadPlaintext && (config.apiKey || config.groqApiKey)) saveConfig(config);
+}
 
 // ============================================
 // Global State
@@ -245,7 +353,7 @@ function startWatchdog() {
     userDismissed = false;
     resetToIdle();
     if (wasUserVisible) {
-      showOverlay('error', { error: 'Timed out. Try again, or restart Whisp.' });
+      showOverlay('error', { error: `Timed out. Try again, or restart ${PRODUCT_NAME}.` });
       scheduleOverlayHide(2500);
     } else {
       hideOverlay();
@@ -271,34 +379,48 @@ function clearWatchdog() {
 // Icon Creation (Using PNG for better macOS support)
 // ============================================
 
-function createTrayIcon(state) {
-  // Use actual PNG files for reliable tray icon display on macOS
-  let iconName = 'tray-idle.png';
-
-  switch (state) {
-    case 'recording':
-      iconName = 'tray-recording.png';
-      break;
-    case 'transcribing':
-      iconName = 'tray-transcribing.png';
-      break;
-  }
-
-  // Handle both dev and packaged paths
-  let iconPath = path.join(__dirname, 'icons', iconName);
-
-  const image = nativeImage.createFromPath(iconPath);
-
+// Mic glyph in four flavors. Idle and working are macOS template images so
+// they adapt to any menubar; recording deliberately breaks monochrome in red.
+// Unpackaged (npm start) runs use a blue mic so a test build is unmistakable
+// next to the installed app.
+function loadTrayImage(name, template) {
+  const image = nativeImage.createFromPath(path.join(__dirname, 'icons', name));
   if (image.isEmpty()) {
-    console.error('Failed to load icon from:', iconPath);
-    // Return a simple colored icon as fallback
+    console.error('Failed to load tray icon:', name);
     return nativeImage.createEmpty();
   }
+  if (template) image.setTemplateImage(true);
+  return image;
+}
 
-  // Resize to proper tray size (16x16 logical)
-  const resized = image.resize({ width: 16, height: 16 });
+function createTrayIcon(state, frame = 'a') {
+  switch (state) {
+    case 'recording':
+      return loadTrayImage(`tray-mic-rec-${frame}.png`, false);
+    case 'transcribing':
+      return loadTrayImage(`tray-mic-tx-${frame}.png`, true);
+    default:
+      return app.isPackaged
+        ? loadTrayImage('tray-mic-idle.png', true)
+        : loadTrayImage('tray-mic-dev.png', false);
+  }
+}
 
-  return resized;
+// Slow pulse while recording or transcribing: two frames swapped on a timer.
+let trayPulseTimer = null;
+let trayPulseFrame = 'a';
+
+function stopTrayPulse() {
+  if (trayPulseTimer) { clearInterval(trayPulseTimer); trayPulseTimer = null; }
+  trayPulseFrame = 'a';
+}
+
+function startTrayPulse(state, intervalMs) {
+  stopTrayPulse();
+  trayPulseTimer = setInterval(() => {
+    trayPulseFrame = trayPulseFrame === 'a' ? 'b' : 'a';
+    if (tray) tray.setImage(createTrayIcon(state, trayPulseFrame));
+  }, intervalMs);
 }
 
 // ============================================
@@ -393,7 +515,10 @@ function createOverlayWindow() {
     skipTaskbar: true,
     resizable: false,
     movable: true,
-    hasShadow: true,
+    // macOS shadows on transparent windows outline the content's alpha —
+    // including the CSS drop shadow — as a rim-lit ghost pill. Depth comes
+    // from the capsule's own box-shadow instead.
+    hasShadow: false,
     type: 'panel', // macOS: doesn't activate app when shown
     // focusable: true (default) — required for click events to fire on macOS
     webPreferences: {
@@ -425,8 +550,8 @@ function createSettingsWindow() {
   }
 
   settingsWindow = new BrowserWindow({
-    width: 420,
-    height: 540,
+    width: 400,
+    height: 660,
     center: true,
     resizable: false,
     minimizable: false,
@@ -445,15 +570,17 @@ function createSettingsWindow() {
   });
 }
 
-function createOnboardingWindow() {
+function createOnboardingWindow(mode) {
+  // Reopening from the menu shows the Guide; a fresh setup gets the intro.
+  const screen = mode === 'guide' && config.onboardingComplete ? 'guide' : '';
   if (onboardingWindow && !onboardingWindow.isDestroyed()) {
     onboardingWindow.focus();
     return;
   }
 
   onboardingWindow = new BrowserWindow({
-    width: 420,
-    height: 620,
+    width: 400,
+    height: screen === 'guide' ? 420 : 480,
     center: true,
     resizable: false,
     minimizable: false,
@@ -465,7 +592,9 @@ function createOnboardingWindow() {
     },
   });
 
-  onboardingWindow.loadFile(path.join(__dirname, 'onboarding.html'));
+  onboardingWindow.loadFile(path.join(__dirname, 'onboarding.html'), {
+    query: screen ? { screen } : {},
+  });
 
   onboardingWindow.on('closed', () => {
     onboardingWindow = null;
@@ -511,7 +640,7 @@ function createTray() {
     const icon = createTrayIcon('idle');
     tray = new Tray(icon);
     updateTrayMenu();
-    tray.setToolTip('Whisp');
+    tray.setToolTip(PRODUCT_NAME);
   } catch (err) {
     console.error('Failed to create tray:', err);
   }
@@ -561,7 +690,7 @@ function copyHistoryEntry(id) {
   if (!entry) return;
   clipboard.writeText(entry.text);
   new Notification({
-    title: 'Whisp',
+    title: PRODUCT_NAME,
     body: 'Copied to clipboard',
   }).show();
 }
@@ -573,38 +702,53 @@ function buildPerfLabel() {
 }
 
 function updateTrayMenu() {
-  const contextMenu = Menu.buildFromTemplate([
+  const history = loadHistory();
+  const last = history[0];
+
+  const template = [
     {
       label: isRecording ? 'Stop Recording' : 'Start Recording',
-      accelerator: 'Ctrl+Space',
+      accelerator: config.shortcut || 'Ctrl+Space',
       click: () => toggleRecording(),
     },
     { type: 'separator' },
-    {
-      label: 'Recent Transcriptions',
-      submenu: buildHistorySubmenu(),
-    },
-    { label: buildPerfLabel(), enabled: false },
+  ];
+
+  if (last) {
+    const preview = last.text.length > 26 ? last.text.slice(0, 26) + '…' : last.text;
+    template.push({
+      label: `Copy Last: "${preview}"`,
+      click: () => copyHistoryEntry(last.id),
+    });
+  }
+
+  template.push({
+    label: 'Recent Transcriptions',
+    submenu: buildHistorySubmenu(),
+  });
+
+  // Latency telemetry is developer data — only in unpackaged runs.
+  if (!app.isPackaged) {
+    template.push({ label: buildPerfLabel(), enabled: false });
+  }
+
+  template.push(
     { type: 'separator' },
-    {
-      label: 'Whisp Intro',
-      click: () => createOnboardingWindow(),
-    },
-    {
-      label: 'Settings...',
-      click: () => createSettingsWindow(),
-    },
+    { label: 'Settings…', click: () => createSettingsWindow() },
+    { label: 'Guide', click: () => createOnboardingWindow('guide') },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
-  ]);
+  );
 
-  tray.setContextMenu(contextMenu);
+  tray.setContextMenu(Menu.buildFromTemplate(template));
 }
 
 function updateTrayIcon(state) {
-  if (tray) {
-    tray.setImage(createTrayIcon(state));
-  }
+  if (!tray) return;
+  tray.setImage(createTrayIcon(state));
+  if (state === 'recording') startTrayPulse(state, 550);
+  else if (state === 'transcribing') startTrayPulse(state, 800);
+  else stopTrayPulse();
 }
 
 // ============================================
@@ -632,12 +776,12 @@ function startRecording() {
   // Cancel any in-flight watchdog from the previous transcription.
   clearWatchdog();
 
-  // Check for API key
-  if (!config.apiKey) {
+  // Check for the active provider's key (Groq-only setups are valid)
+  if (!hasActiveKey()) {
     createSettingsWindow();
     new Notification({
-      title: 'Whisp',
-      body: 'Please configure your OpenAI API key first',
+      title: PRODUCT_NAME,
+      body: 'Add your API key in Settings first.',
     }).show();
     return;
   }
@@ -750,6 +894,13 @@ function insertText(text) {
   // Copy to clipboard
   clipboard.writeText(text);
 
+  // Auto-paste off: clipboard is the destination. Tell the user, done.
+  if (config.autoPasteEnabled === false) {
+    showOverlay('copy');
+    scheduleOverlayHide(2600);
+    return;
+  }
+
   const { exec } = require('child_process');
 
   // Small delay to ensure clipboard is ready, then paste
@@ -764,12 +915,14 @@ function insertText(text) {
 
       if (error) {
         console.error('Failed to paste via AppleScript:', error.message);
-        showOverlay('success', { text: 'Copied! Press Cmd+V to paste' });
+        showOverlay('copy');
+        scheduleOverlayHide(2600);
       } else {
-        showOverlay('success', { text });
+        // Success shows no text: the capsule contracts to a circle, draws the
+        // check, then drops away. The renderer starts the drop at 1100ms.
+        showOverlay('success');
+        scheduleOverlayHide(1500);
       }
-
-      scheduleOverlayHide(3000);
     });
   }, 100);
 }
@@ -784,7 +937,24 @@ ipcMain.handle('get-config', () => {
 });
 
 ipcMain.handle('save-config', (event, newConfig) => {
+  const previousShortcut = config.shortcut;
   config = { ...config, ...newConfig };
+  let shortcutError = null;
+
+  if (newConfig.appearance) applyAppearance();
+
+  // Shortcut changed: swap the global registration, roll back on failure.
+  if (newConfig.shortcut && newConfig.shortcut !== previousShortcut) {
+    globalShortcut.unregister(previousShortcut);
+    const ok = globalShortcut.register(newConfig.shortcut, () => toggleRecording());
+    if (!ok) {
+      shortcutError = `${newConfig.shortcut} is taken by another app. Kept ${previousShortcut}.`;
+      config.shortcut = previousShortcut;
+      globalShortcut.register(previousShortcut, () => toggleRecording());
+    }
+    updateTrayMenu();
+  }
+
   const success = saveConfig(config);
 
   if (recorderWindow && !recorderWindow.isDestroyed()) {
@@ -793,7 +963,22 @@ ipcMain.handle('save-config', (event, newConfig) => {
     recorderWindow.webContents.send('set-transcription-provider', config.transcriptionProvider || 'openai');
   }
 
+  if (shortcutError) return { success, shortcutError, shortcut: config.shortcut };
   return success;
+});
+
+ipcMain.handle('open-external', (event, url) => {
+  if (typeof url === 'string' && url.startsWith('https://')) {
+    shell.openExternal(url);
+  }
+});
+
+ipcMain.on('open-settings', () => {
+  createSettingsWindow();
+});
+
+ipcMain.on('get-product-name', (event) => {
+  event.returnValue = PRODUCT_NAME;
 });
 
 ipcMain.handle('test-api-key', async (event, apiKey) => {
@@ -922,6 +1107,7 @@ ipcMain.on('transcription-error', (event, error) => {
     return;
   }
 
+  playSound('Basso'); // one low note, the only sound with weight
   showOverlay('error', { error });
   resetToIdle();
 
@@ -1099,13 +1285,15 @@ app.whenReady().then(() => {
   // Check Accessibility permission
   systemPreferences.isTrustedAccessibilityClient(true);
 
+  applyAppearance();
+  hydrateKeys();
   createRecorderWindow();
   createTray();
 
-  // Show onboarding if not completed, otherwise check for API key
+  // Show onboarding if not completed, otherwise check for the active key
   if (!config.onboardingComplete) {
     createOnboardingWindow();
-  } else if (!config.apiKey) {
+  } else if (!hasActiveKey()) {
     createSettingsWindow();
   }
 
@@ -1118,7 +1306,7 @@ app.whenReady().then(() => {
   if (!registered) {
     console.error('Failed to register shortcut:', shortcut);
     new Notification({
-      title: 'Whisp',
+      title: PRODUCT_NAME,
       body: `Failed to register ${shortcut}. It may be used by another app.`,
     }).show();
   }
@@ -1151,7 +1339,117 @@ app.on('window-all-closed', (e) => {
 app.on('activate', () => {
   if (!config.onboardingComplete) {
     createOnboardingWindow();
-  } else if (!settingsWindow && !config.apiKey) {
+  } else if (!settingsWindow && !hasActiveKey()) {
     createSettingsWindow();
   }
 });
+
+// ============================================
+// UI test drive (WHISP_UITEST=1) — opens every window, walks the overlay
+// through its states with fake levels, captures PNGs, then quits. Lets a
+// session verify the real rendered UI without touching the mic or the APIs.
+// ============================================
+
+if (process.env.WHISP_UITEST) {
+  app.whenReady().then(() => {
+    const outDir = process.env.WHISP_UITEST_DIR || app.getPath('temp');
+    const shots = [];
+    const snap = (win, name) => {
+      if (!win || win.isDestroyed()) return Promise.resolve();
+      return win.webContents.capturePage().then((img) => {
+        const file = path.join(outDir, `uitest-${name}.png`);
+        fs.writeFileSync(file, img.toPNG());
+        shots.push(file);
+      }).catch((err) => console.error('[uitest] capture failed:', name, err.message));
+    };
+    const fakeLevels = () => Array.from({ length: 17 }, (_, i) => {
+      const c = Math.abs(i - 8) / 8;
+      return Math.max(0.05, (0.85 - c * 0.6) * (0.4 + 0.6 * Math.random()));
+    });
+
+    setTimeout(async () => {
+      try {
+        createSettingsWindow();
+        createOnboardingWindow();
+        createOverlayWindow();
+        await new Promise((r) => setTimeout(r, 1600));
+
+        showOverlay('recording');
+        const levelTimer = setInterval(() => {
+          if (overlayWindow && !overlayWindow.isDestroyed()) {
+            overlayWindow.webContents.send('audio-levels', fakeLevels());
+          }
+        }, 50);
+        await new Promise((r) => setTimeout(r, 900));
+        await snap(overlayWindow, 'overlay-recording');
+
+        clearInterval(levelTimer);
+        showOverlay('transcribing');
+        await new Promise((r) => setTimeout(r, 600));
+        await snap(overlayWindow, 'overlay-transcribing');
+
+        showOverlay('success');
+        await new Promise((r) => setTimeout(r, 800));
+        await snap(overlayWindow, 'overlay-success');
+
+        showOverlay('error', { error: "Couldn't reach Groq. Check connection." });
+        await new Promise((r) => setTimeout(r, 400));
+        await snap(overlayWindow, 'overlay-error');
+
+        showOverlay('copy');
+        await new Promise((r) => setTimeout(r, 400));
+        await snap(overlayWindow, 'overlay-copy');
+
+        await snap(settingsWindow, 'settings');
+        await snap(onboardingWindow, 'onboarding');
+
+        // Light mode pass: flip the theme source and re-capture.
+        nativeTheme.themeSource = 'light';
+        showOverlay('recording');
+        const lightLevels = setInterval(() => {
+          if (overlayWindow && !overlayWindow.isDestroyed()) {
+            overlayWindow.webContents.send('audio-levels', fakeLevels());
+          }
+        }, 50);
+        await new Promise((r) => setTimeout(r, 700));
+        await snap(overlayWindow, 'overlay-recording-light');
+        clearInterval(lightLevels);
+        await snap(settingsWindow, 'settings-light');
+        console.log('[uitest] captured:', JSON.stringify(shots));
+
+        // Optional burst capture of the live overlay loop for the README GIF.
+        if (process.env.WHISP_UITEST_GIF) {
+          nativeTheme.themeSource = 'dark'; // the README hero is the dark capsule
+          await new Promise((r) => setTimeout(r, 300));
+          const frameDir = path.join(outDir, 'gif-frames');
+          if (!fs.existsSync(frameDir)) fs.mkdirSync(frameDir, { recursive: true });
+          let frame = 0;
+          const grab = async () => {
+            if (!overlayWindow || overlayWindow.isDestroyed()) return;
+            const img = await overlayWindow.webContents.capturePage();
+            fs.writeFileSync(path.join(frameDir, `f-${String(frame++).padStart(3, '0')}.png`), img.toPNG());
+          };
+          showOverlay('recording');
+          const gifLevels = setInterval(() => {
+            if (overlayWindow && !overlayWindow.isDestroyed()) {
+              overlayWindow.webContents.send('audio-levels', fakeLevels());
+            }
+          }, 50);
+          const burst = setInterval(grab, 90);
+          await new Promise((r) => setTimeout(r, 2100));
+          clearInterval(gifLevels);
+          showOverlay('transcribing');
+          await new Promise((r) => setTimeout(r, 1300));
+          showOverlay('success');
+          await new Promise((r) => setTimeout(r, 1900));
+          clearInterval(burst);
+          console.log('[uitest] gif frames:', frame);
+        }
+      } catch (err) {
+        console.error('[uitest] failed:', err);
+      } finally {
+        app.quit();
+      }
+    }, 1200);
+  });
+}

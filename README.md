@@ -1,96 +1,55 @@
-# Voice Dictation for Mac
+# Leise
 
-A lightweight macOS menubar app that transcribes your voice to text using OpenAI's Whisper API.
+Voice to text, anywhere you type. A macOS menubar app.
 
-![Voice Dictation](https://img.shields.io/badge/macOS-10.15+-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![The Leise overlay recording, transcribing, and finishing](docs/overlay.gif)
+
+Press `⌃Space`, speak, press it again. Your words land wherever your cursor is.
+
+## How it works
+
+1. A global hotkey (default `⌃Space`, configurable) starts recording. A small overlay shows a live waveform while you speak.
+2. Audio goes to the provider you pick, on your own API key: Groq (`whisper-large-v3-turbo`, the default) or OpenAI (`whisper-1`).
+3. The transcript is pasted at your cursor and kept in a local history, the last 20, reachable from the menubar.
 
 ## Features
 
-- 🎤 **Global Hotkey**: Press `⌘+Shift+Space` anywhere to start/stop recording
-- 📝 **Auto-Insert**: Transcribed text is automatically typed at your cursor position
-- 🔵 **Menubar Icon**: Visual indicator shows recording status (blue = idle, red = recording)
-- ⚡ **Powered by Whisper**: Uses OpenAI's state-of-the-art speech recognition
+- Live waveform overlay with recording, transcribing, and inserted states, in light and dark
+- API keys stored encrypted through the macOS Keychain, never in plain text
+- Dictionary: list your names and jargon once, Leise uses them as spelling hints
+- Copy Last and recent transcriptions in the menubar menu
+- Configurable shortcut, microphone picker, sounds and auto-paste toggles
+- `Esc` cancels quietly; the transcript still lands in history
+- `⏎` also stops a recording
 
-## Installation
+<img src="docs/settings.png" alt="Leise settings" width="380">
 
-### Prerequisites
+## Install
 
-1. **Node.js 18+** - [Download](https://nodejs.org/)
-2. **OpenAI API Key** - [Get one here](https://platform.openai.com/api-keys)
-
-### Setup
+You need Node 18+ and an API key: [console.groq.com](https://console.groq.com/keys) (free) or [platform.openai.com](https://platform.openai.com/api-keys).
 
 ```bash
-# Clone the repository
 git clone https://github.com/abdelilahDR/voice-dictation-mac.git
 cd voice-dictation-mac
-
-# Install dependencies
 npm install
-
-# Set your OpenAI API key
-export OPENAI_API_KEY=sk-your-key-here
-
-# Run the app
 npm start
 ```
 
-### Build for Distribution
+The first run walks you through permissions and your key, and ends with a test dictation.
 
-```bash
-npm run build
-```
-
-This creates a `.dmg` file in the `dist/` folder.
-
-## Usage
-
-1. **Start the app** - A microphone icon appears in your menubar
-2. **Press `⌘+Shift+Space`** - The icon turns red, indicating recording
-3. **Speak your text** - Talk naturally
-4. **Press `⌘+Shift+Space` again** - Recording stops, text is transcribed
-5. **Text appears at cursor** - The transcription is typed wherever your cursor is
+To build a standalone app: `npm run build`, then install from `dist/`.
 
 ## Permissions
 
-On first run, macOS will ask for:
-
-- **Microphone Access** - Required for recording
-- **Accessibility Access** - Required for typing text at cursor (System Preferences → Security & Privacy → Accessibility)
-
-## Configuration
-
-The app reads the `OPENAI_API_KEY` from your environment. Add it to your shell profile for persistence:
-
-```bash
-# ~/.zshrc or ~/.bashrc
-export OPENAI_API_KEY=sk-your-key-here
-```
-
-## How It Works
-
-1. **Recording**: Uses the Web Audio API via Electron to capture microphone input
-2. **Transcription**: Sends audio to OpenAI's Whisper API (`whisper-1` model)
-3. **Text Insertion**: Uses AppleScript to simulate keystrokes at the current cursor position
+- **Microphone** — recording
+- **Accessibility** — pasting at your cursor (System Settings → Privacy & Security → Accessibility)
 
 ## Troubleshooting
 
-### "Text not appearing"
-- Grant Accessibility permission in System Preferences → Security & Privacy → Accessibility
-- As a fallback, the app copies text to clipboard
-
-### "Microphone access denied"
-- Grant Microphone permission in System Preferences → Security & Privacy → Microphone
-
-### "API error"
-- Verify your `OPENAI_API_KEY` is set correctly
-- Check you have credits on your OpenAI account
+- **Nothing pastes.** Grant the Accessibility permission. The text is still on your clipboard and in the menubar history.
+- **The shortcut does nothing.** Another app may hold it. Pick a different combo in Settings, it re-registers live.
+- **"Couldn't reach" errors.** Check your connection and that your key is valid; Settings validates it as you type.
 
 ## License
 
 MIT © Moonsight
-
-## Credits
-
-- [OpenAI Whisper](https://openai.com/research/whisper) - Speech recognition
-- [Electron](https://electronjs.org/) - Desktop framework

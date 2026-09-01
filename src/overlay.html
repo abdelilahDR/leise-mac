@@ -2,239 +2,235 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Whisp</title>
+  <title>Leise</title>
+  <link rel="stylesheet" href="tokens.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
       background: transparent;
       overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: var(--font);
+      height: 100%;
+    }
+    body {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: var(--space-24);
     }
 
-    .overlay {
-      position: relative;
-      background: rgba(30, 30, 30, 0.95);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      border-radius: 12px;
-      padding: 12px 20px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+    /* Stage handles arrival and the success drop. */
+    .stage {
+      opacity: 0;
+      transform: translateY(14px) scale(0.96);
+    }
+    .stage.shown {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      transition: transform 280ms cubic-bezier(0.3, 1.4, 0.6, 1), opacity 140ms ease-out;
+    }
+    .stage.drop {
+      opacity: 0;
+      transform: translateY(30px) scale(0.92);
+      transition: transform 260ms cubic-bezier(0.55, 0, 0.85, 0.4), opacity 220ms ease-in 20ms;
+    }
+
+    /* The capsule: dot, wave, timer. Contracts to a circle on success. */
+    /* No backdrop-filter here: a transparent Electron window has no backdrop
+       to sample, and Chromium paints a ghost pill around the element instead. */
+    .capsule {
+      width: 178px;
+      height: 42px;
+      border-radius: 21px;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      gap: 4px;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+      color: var(--glass-ink);
+      cursor: grab;
+      user-select: none;
+      -webkit-app-region: drag;
+      transition: width 380ms cubic-bezier(0.55, -0.18, 0.28, 1.2);
+    }
+    .stage.ok .capsule { width: 42px; animation: settle 400ms cubic-bezier(0.4, 0, 0.4, 1); }
+    @keyframes settle {
+      0% { transform: translateY(0); }
+      45% { transform: translateY(5px); }
+      100% { transform: translateY(0); }
+    }
+
+    .body { display: flex; align-items: center; gap: var(--space-8); white-space: nowrap; transition: opacity 220ms ease; }
+    .stage.ok .body { opacity: 0; }
+
+    .slot {
+      width: 13px; height: 13px; flex-shrink: 0;
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); transition: opacity 200ms ease; }
+    .stage.tx .dot, .stage.ok .dot, .stage.drop .dot { opacity: 0; }
+
+    /* Transcribing spinner: the arc grows and shrinks while rotating.
+       It crossfades with the dot and keeps spinning while the row fades
+       out on success — the dot never comes back. */
+    .spin {
+      position: absolute; inset: 0;
+      opacity: 0;
+      transition: opacity 200ms ease;
+      animation: rotate 1.4s linear infinite;
+    }
+    .stage.tx .spin, .stage.ok .spin, .stage.drop .spin { opacity: 1; }
+    .spin circle {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      animation: dash 1.4s ease-in-out infinite;
+    }
+    .spin .track { stroke: currentColor; opacity: 0.15; animation: none; }
+    @keyframes rotate { to { transform: rotate(360deg); } }
+    @keyframes dash {
+      0%   { stroke-dasharray: 5, 29.5; stroke-dashoffset: 0; }
+      50%  { stroke-dasharray: 24, 10.5; stroke-dashoffset: -8; }
+      100% { stroke-dasharray: 5, 29.5; stroke-dashoffset: -34.5; }
+    }
+
+    .wave { display: flex; align-items: center; gap: 2.5px; height: 24px; }
+    .wave i {
+      width: 2.5px; height: 4px; border-radius: 1.5px;
+      background: currentColor; opacity: 0.85;
+      transition: height 90ms ease-out;
+    }
+    .stage.tx .wave i {
+      height: 5px !important;
+      animation: breathe 1.3s ease-in-out infinite;
+      animation-delay: calc(var(--i) * 55ms);
+    }
+    @keyframes breathe { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.7; } }
+
+    .timer {
+      font-size: 12px;
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+      opacity: 0.55;
+      transition: opacity 200ms ease;
+    }
+    .stage.tx .timer { opacity: 0.3; }
+
+    .check { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; }
+    .stage.ok .check { opacity: 1; transition: opacity 140ms ease 220ms; }
+    .check svg { width: 18px; height: 18px; }
+    .check path {
+      stroke: var(--green); stroke-width: 2.4; fill: none;
+      stroke-linecap: round; stroke-linejoin: round;
+      stroke-dasharray: 20; stroke-dashoffset: 20;
+    }
+    .stage.ok .check path { stroke-dashoffset: 0; transition: stroke-dashoffset 260ms ease-out 340ms; }
+
+    /* Message pill: errors and the paste-failed case. */
+    .msg {
+      display: none;
+      align-items: center;
+      gap: var(--space-8);
+      height: 38px;
+      padding: 0 var(--space-16);
+      border-radius: 19px;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+      color: var(--glass-ink);
+      font-size: 12.5px;
+      white-space: nowrap;
       cursor: grab;
       user-select: none;
       -webkit-app-region: drag;
     }
+    .stage.msg-mode .capsule { display: none; }
+    .stage.msg-mode .msg { display: flex; }
+    .msg .mdot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+    .msg.neutral .mdot { background: var(--secondary); }
+    .msg kbd {
+      font-size: 10px; font-family: inherit; border-radius: 3px; padding: var(--space-2) var(--space-6);
+      background: rgba(127, 127, 127, 0.18);
+      -webkit-app-region: no-drag;
+    }
 
-    .close-btn {
+    /* Hover-only close. */
+    .x {
       position: absolute;
-      top: 6px;
-      right: 8px;
-      width: 22px;
-      height: 22px;
-      padding: 0;
-      border: none;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.12);
-      color: #fff;
-      font-size: 16px;
-      font-weight: 600;
-      line-height: 1;
+      top: -6px; right: -6px;
+      width: 20px; height: 20px;
+      border: none; border-radius: 50%;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      color: var(--glass-ink);
+      font-size: 12px; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      opacity: 0;
+      transition: opacity 150ms ease;
       -webkit-app-region: no-drag;
       z-index: 10;
     }
+    .stage:hover .x { opacity: 1; }
+    .stage.ok .x { opacity: 0; }
 
-    .close-btn:hover {
-      background: rgba(255, 59, 48, 0.85);
-      color: #fff;
+    @media (prefers-reduced-motion: reduce) {
+      .stage, .capsule, .body, .check, .check path, .spin, .spin circle, .wave i { transition: none !important; animation: none !important; }
     }
-
-    .main-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .waveform {
-      display: flex;
-      align-items: center;
-      gap: 3px;
-      height: 20px;
-    }
-
-    .bar {
-      width: 3px;
-      background: #FF3B30;
-      border-radius: 2px;
-      min-height: 4px;
-      height: 4px;
-      transition: height 0.05s ease-out;
-    }
-
-    .dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #FF3B30;
-    }
-
-    .dot.orange { background: #FF9500; }
-    .dot.green { background: #34C759; }
-    .dot.red { background: #FF3B30; }
-
-    .status {
-      font-size: 14px;
-      font-weight: 500;
-      color: #fff;
-    }
-
-    .timer {
-      font-size: 14px;
-      font-weight: 400;
-      color: #888;
-      font-family: 'SF Mono', Monaco, monospace;
-    }
-
-    .hint {
-      font-size: 11px;
-      color: #666;
-    }
-
-    .hint kbd {
-      background: rgba(255, 255, 255, 0.1);
-      padding: 1px 5px;
-      border-radius: 3px;
-      font-family: inherit;
-      font-size: 10px;
-    }
-
-    .error-text {
-      font-size: 12px;
-      color: #FF3B30;
-      max-width: 240px;
-      text-align: center;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .success-text {
-      font-size: 12px;
-      color: #aaa;
-      max-width: 320px;
-      text-align: center;
-      line-height: 1.5;
-      overflow: hidden;
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-    }
-
-    .copied-badge {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(52, 199, 89, 0.2);
-      padding: 4px 10px;
-      border-radius: 4px;
-      margin-bottom: 6px;
-    }
-
-    .copied-badge span {
-      font-size: 11px;
-      font-weight: 500;
-      color: #34C759;
-    }
-
-    .spinner {
-      width: 10px;
-      height: 10px;
-      border: 2px solid rgba(255, 149, 0, 0.3);
-      border-top-color: #FF9500;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    .hidden { display: none !important; }
   </style>
 </head>
 <body>
-  <div class="overlay">
-    <button type="button" class="close-btn" id="closeBtn" aria-label="Close">×</button>
-    <!-- Recording state -->
-    <div id="recordingState">
-      <div class="main-row">
-        <div class="waveform" id="waveform">
-          <div class="bar" id="bar0"></div>
-          <div class="bar" id="bar1"></div>
-          <div class="bar" id="bar2"></div>
-          <div class="bar" id="bar3"></div>
-          <div class="bar" id="bar4"></div>
-        </div>
-        <span class="status">Recording</span>
+  <div class="stage" id="stage">
+    <button type="button" class="x" id="closeBtn" aria-label="Close">×</button>
+    <div class="capsule" id="capsule">
+      <div class="body" id="capBody">
+        <span class="slot">
+          <span class="dot"></span>
+          <svg class="spin" viewBox="0 0 13 13" aria-hidden="true"><circle class="track" cx="6.5" cy="6.5" r="5.5"/><circle cx="6.5" cy="6.5" r="5.5"/></svg>
+        </span>
+        <span class="wave" id="wave"></span>
         <span class="timer" id="timer">00:00</span>
       </div>
-      <div class="hint"><kbd>Enter</kbd> or <kbd>Ctrl+Space</kbd> to stop · <kbd>ESC</kbd> to cancel</div>
+      <span class="check"><svg viewBox="0 0 18 18"><path d="M4.5 9.5l3.5 3.5 6-7"/></svg></span>
     </div>
-
-    <!-- Transcribing state -->
-    <div id="transcribingState" class="hidden">
-      <div class="main-row">
-        <div class="spinner"></div>
-        <span class="status">Transcribing...</span>
-      </div>
-    </div>
-
-    <!-- Success state -->
-    <div id="successState" class="hidden">
-      <div class="copied-badge">
-        <div class="dot green"></div>
-        <span>Copied to clipboard</span>
-      </div>
-      <span class="success-text" id="successText"></span>
-    </div>
-
-    <!-- Error state -->
-    <div id="errorState" class="hidden">
-      <div class="main-row">
-        <div class="dot red"></div>
-        <span class="error-text" id="errorText">Error</span>
-      </div>
-      <div class="hint"><kbd>ESC</kbd> to close · drag to move</div>
-    </div>
+    <div class="msg" id="msg"><span class="mdot" id="mdot"></span><span id="msgText"></span><kbd id="msgKbd">esc</kbd></div>
   </div>
 
   <script>
-    const recordingState = document.getElementById('recordingState');
-    const transcribingState = document.getElementById('transcribingState');
-    const successState = document.getElementById('successState');
-    const errorState = document.getElementById('errorState');
+    const stage = document.getElementById('stage');
+    const waveEl = document.getElementById('wave');
     const timerEl = document.getElementById('timer');
-    const successText = document.getElementById('successText');
-    const errorText = document.getElementById('errorText');
+    const msgEl = document.getElementById('msg');
+    const msgText = document.getElementById('msgText');
+    const msgKbd = document.getElementById('msgKbd');
 
-    // Get bar elements for waveform animation
-    const bars = [
-      document.getElementById('bar0'),
-      document.getElementById('bar1'),
-      document.getElementById('bar2'),
-      document.getElementById('bar3'),
-      document.getElementById('bar4'),
-    ];
+    const BAR_COUNT = 17;
+    const bars = [];
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const b = document.createElement('i');
+      b.style.setProperty('--i', i);
+      waveEl.appendChild(b);
+      bars.push(b);
+    }
+    // Display order: lowest (loudest) band in the middle, highs at the edges.
+    const CENTER = Math.floor(BAR_COUNT / 2);
+    function bandForPosition(i) {
+      return Math.abs(i - CENTER) * 2 - (i < CENTER ? 1 : 0);
+    }
+    // Meter curve: gate out the room's noise floor, then a soft 0.75-power
+    // knee so speech lives mid-range instead of clipping to a wall.
+    const LEVEL_FLOOR = 0.09;
+    const LEVEL_GAIN = 1.35;
+    const LEVEL_EXP = 0.8;
 
     let startTime = Date.now();
     let timerInterval = null;
+    let dropTimer = null;
 
     function updateTimer() {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
@@ -242,77 +238,76 @@
       const secs = (elapsed % 60).toString().padStart(2, '0');
       timerEl.textContent = `${mins}:${secs}`;
     }
-
     function startTimer() {
       startTime = Date.now();
+      if (timerInterval) clearInterval(timerInterval);
       timerInterval = setInterval(updateTimer, 1000);
       updateTimer();
     }
-
     function stopTimer() {
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = null;
-      }
+      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    }
+
+    function setStage(cls) {
+      if (dropTimer) { clearTimeout(dropTimer); dropTimer = null; }
+      stage.className = 'stage shown ' + cls;
     }
 
     function showState(state, data = {}) {
-      recordingState.classList.add('hidden');
-      transcribingState.classList.add('hidden');
-      successState.classList.add('hidden');
-      errorState.classList.add('hidden');
-
       switch (state) {
         case 'recording':
-          recordingState.classList.remove('hidden');
+          setStage('');
           startTimer();
           break;
         case 'transcribing':
-          transcribingState.classList.remove('hidden');
+          setStage('tx');
           stopTimer();
           break;
-        case 'success': {
-          successState.classList.remove('hidden');
-          const text = data.text || '';
-          // Show up to 150 chars (fits ~3 lines) with quotes
-          successText.textContent = text.length > 150 ? '"' + text.substring(0, 150) + '..."' : '"' + text + '"';
+        case 'success':
+          // Contract to a circle, draw the check, then drop away.
+          // Main hides the window at 1500ms; the drop starts at 1100ms.
+          setStage('ok');
+          stopTimer();
+          dropTimer = setTimeout(() => { stage.classList.add('drop'); }, 1100);
+          break;
+        case 'copy':
+          // Auto-paste failed or is off: the text is on the clipboard.
+          setStage('msg-mode');
+          msgEl.classList.add('neutral');
+          msgText.textContent = 'Copied. Press ⌘V to paste.';
+          msgKbd.style.display = 'none';
           stopTimer();
           break;
-        }
         case 'error':
-          errorState.classList.remove('hidden');
-          errorText.textContent = data.error || 'An error occurred';
+          setStage('msg-mode');
+          msgEl.classList.remove('neutral');
+          msgText.textContent = data.error || 'Something went wrong';
+          msgKbd.style.display = '';
           stopTimer();
           break;
       }
     }
 
-    // Listen for state updates
     window.electronAPI.onUpdateOverlay((data) => {
       showState(data.state, data);
     });
 
-    // Listen for audio levels and animate bars
     window.electronAPI.onAudioLevels((levels) => {
-      if (Array.isArray(levels) && levels.length === 5) {
-        for (let i = 0; i < 5; i++) {
-          // Scale level (0-1) to height (4px min, 20px max)
-          const height = 4 + (levels[i] * 16);
-          bars[i].style.height = `${height}px`;
-        }
+      if (!Array.isArray(levels)) return;
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const level = levels[bandForPosition(i)] || 0;
+        const gated = Math.max(0, level - LEVEL_FLOOR) * LEVEL_GAIN;
+        const v = Math.min(1, Math.pow(gated, LEVEL_EXP));
+        const h = 4 + v * 20;
+        bars[i].style.height = h.toFixed(1) + 'px';
       }
     });
 
-    // ✕ button — dismiss the overlay regardless of state. The .overlay div is
-    // a drag region, which swallows clicks on macOS, so we need an explicit
-    // no-drag button to hand off click events to the main process.
     document.getElementById('closeBtn').addEventListener('click', (e) => {
       e.stopPropagation();
-      console.log('close button clicked');
       window.electronAPI.closeOverlay();
     });
 
-    // Initial state
     showState('recording');
   </script>
 </body>

@@ -2,562 +2,382 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Whisp Settings</title>
+  <title>Leise Settings</title>
+  <link rel="stylesheet" href="tokens.css">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #1a1a1a;
-      color: #e5e5e5;
-      padding: 20px;
-      padding-top: 44px;
-      overflow: hidden;
-    }
-
-    .drag-region {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 44px;
-      -webkit-app-region: drag;
-      z-index: 100;
-    }
-
-    h1 {
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 4px;
-      color: #fff;
-    }
-
-    .subtitle {
-      color: #666;
+      font-family: var(--font);
+      background: var(--ground);
+      color: var(--ink);
       font-size: 13px;
-      margin-bottom: 20px;
+      padding: var(--space-16) var(--space-20) var(--space-20);
+      padding-top: 40px;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
     }
+    .drag-region {
+      position: fixed; top: 0; left: 0; right: 0; height: 40px;
+      -webkit-app-region: drag; z-index: 100;
+    }
+    .win-title {
+      position: fixed; top: 0; left: 0; right: 0; height: 40px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 600; opacity: 0.9;
+      pointer-events: none; z-index: 101;
+    }
+
+    .warn {
+      display: none;
+      border-radius: var(--radius-group);
+      background: rgba(255, 149, 0, 0.12);
+      border: 0.5px solid rgba(255, 149, 0, 0.3);
+      color: var(--ink);
+      padding: var(--space-8) var(--space-16);
+      font-size: 12px;
+      margin-bottom: var(--space-4);
+    }
+    .warn.visible { display: block; }
+    .warn b { color: var(--orange); font-weight: 600; }
 
     .section-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #666;
-      margin-bottom: 8px;
+      font-size: 11px; font-weight: 500; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--secondary);
+      margin: var(--space-16) var(--space-8) var(--space-6);
+    }
+    .group {
+      background: var(--surface);
+      border: 0.5px solid var(--hairline);
+      border-radius: var(--radius-group);
+      overflow: hidden;
+    }
+    .row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: var(--space-12); min-height: 42px; padding: var(--space-6) var(--space-16);
+    }
+    .row + .row { border-top: 0.5px solid var(--row-sep); }
+    .help { font-size: 11.5px; color: var(--secondary); margin: var(--space-6) var(--space-12) 0; }
+    .help a { color: var(--blue); text-decoration: none; cursor: pointer; }
+    .help a:hover { text-decoration: underline; }
+    .help .err { color: var(--red); }
+
+    .seg { display: flex; border-radius: 7px; padding: 2px; width: 158px; background: var(--seg-track); font-size: 12px; }
+    .seg button {
+      flex: 1; text-align: center; padding: var(--space-4) 0; border-radius: 5px;
+      font-weight: 500; opacity: 0.65; border: none; background: transparent;
+      color: inherit; font-family: inherit; font-size: inherit; cursor: pointer;
+    }
+    .seg button.on { opacity: 1; background: var(--seg-thumb); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); }
+    .seg button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+
+    .keywrap { display: flex; align-items: center; gap: var(--space-8); flex: 1; justify-content: flex-end; }
+    .keyinput {
+      border: none; background: transparent; outline: none;
+      color: var(--ink); font-family: var(--mono); font-size: 12px;
+      text-align: right; width: 100%; max-width: 190px;
+    }
+    .keyinput::placeholder { color: var(--secondary); opacity: 0.7; }
+    .kdot { width: 7px; height: 7px; border-radius: 50%; background: var(--secondary); opacity: 0.4; flex-shrink: 0; transition: background-color 150ms ease, opacity 150ms ease; }
+    .kdot.ok { background: var(--green); opacity: 1; }
+    .kdot.bad { background: var(--red); opacity: 1; }
+    .kdot.busy { background: var(--orange); opacity: 1; }
+
+    .toggle {
+      width: 38px; height: 23px; border-radius: 12px; position: relative;
+      flex-shrink: 0; border: none; cursor: pointer;
+      background: rgba(127, 127, 127, 0.35);
+      transition: background-color 180ms ease;
+    }
+    .toggle::after {
+      content: ""; position: absolute; top: 1.5px; left: 1.5px;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: #FFFFFF; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+      transition: transform 180ms ease;
+    }
+    .toggle.on { background: var(--green); }
+    .toggle.on::after { transform: translateX(15px); }
+    .toggle:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+    select {
+      appearance: none; -webkit-appearance: none;
+      background: var(--control-bg); color: var(--ink);
+      border: none; border-radius: var(--radius-control);
+      font-family: inherit; font-size: 12px;
+      padding: var(--space-4) 22px var(--space-4) var(--space-8); cursor: pointer;
+      max-width: 180px; text-overflow: ellipsis;
+    }
+    .ddwrap { position: relative; display: inline-flex; align-items: center; }
+    .ddwrap::after {
+      content: "⌄"; position: absolute; right: 8px; top: 45%;
+      transform: translateY(-50%); font-size: 11px; opacity: 0.6; pointer-events: none;
     }
 
-    .provider-card {
-      background: #242424;
-      border: 1px solid #333;
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      transition: border-color 0.15s;
+    .sc-chip {
+      font-family: var(--mono); font-size: 12px; border-radius: 6px;
+      padding: var(--space-4) var(--space-8); border: 0.5px solid rgba(127, 127, 127, 0.5);
+      background: transparent; color: inherit; cursor: pointer;
     }
+    .sc-chip.arming { border-color: var(--blue); color: var(--blue); }
+    .sc-chip:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
-    .provider-card:hover {
-      border-color: #444;
+    textarea.vocab {
+      width: 100%; min-height: 64px; resize: none;
+      border: none; outline: none; background: transparent;
+      color: var(--ink); font-family: inherit; font-size: 12px; line-height: 1.5;
+      padding: var(--space-8) var(--space-16);
     }
+    textarea.vocab::placeholder { color: var(--secondary); opacity: 0.7; }
 
-    .provider-card.selected {
-      border-color: #34C759;
-      background: #1f2a1f;
-    }
-
-    .provider-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-
-    .provider-radio {
-      width: 16px;
-      height: 16px;
-      accent-color: #34C759;
-      cursor: pointer;
-      margin: 0;
-    }
-
-    .provider-name {
-      font-size: 14px;
-      font-weight: 500;
-      color: #fff;
-    }
-
-    .provider-badge {
-      font-size: 9px;
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-    }
-
-    .badge-fast {
-      background: rgba(52, 199, 89, 0.15);
-      color: #34C759;
-    }
-
-    .badge-default {
-      background: rgba(52, 199, 89, 0.15);
-      color: #34C759;
-      display: none;
-      margin-left: auto;
-    }
-
-    .provider-card.selected .badge-default {
-      display: inline-block;
-    }
-
-    .provider-content {
-      margin-left: 26px;
-    }
-
-    .api-key-row {
-      display: flex;
-      gap: 8px;
-    }
-
-    .api-key-row input {
-      flex: 1;
-      padding: 8px 10px;
-      font-size: 13px;
-      border: 1px solid #333;
-      border-radius: 6px;
-      background: #1a1a1a;
-      color: #fff;
-      outline: none;
-      font-family: monospace;
-    }
-
-    .api-key-row input:focus {
-      border-color: #007AFF;
-    }
-
-    .api-key-row input::placeholder {
-      color: #555;
-    }
-
-    .btn-test {
-      padding: 8px 12px;
-      font-size: 12px;
-      font-weight: 500;
-      border: 1px solid #333;
-      border-radius: 6px;
-      background: transparent;
-      color: #888;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-
-    .btn-test:hover {
-      border-color: #007AFF;
-      color: #007AFF;
-    }
-
-    .input-hint {
-      font-size: 11px;
-      color: #555;
-      margin-top: 6px;
-    }
-
-    .input-hint a {
-      color: #007AFF;
-      text-decoration: none;
-    }
-
-    .input-hint a:hover {
-      text-decoration: underline;
-    }
-
-    .status {
-      margin-top: 8px;
-      padding: 8px 10px;
-      border-radius: 6px;
-      font-size: 12px;
-      display: none;
-    }
-
-    .status.success {
-      display: block;
-      background: rgba(52, 199, 89, 0.1);
-      color: #34C759;
-    }
-
-    .status.error {
-      display: block;
-      background: rgba(255, 59, 48, 0.1);
-      color: #FF3B30;
-    }
-
-    .shortcuts-section {
-      margin-top: 16px;
-      padding-top: 16px;
-      border-top: 1px solid #2a2a2a;
-    }
-
-    .shortcut-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 0;
-    }
-
-    .shortcut-label {
-      font-size: 13px;
-      color: #888;
-    }
-
-    .shortcut-keys {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .key {
-      background: #2a2a2a;
-      padding: 3px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-family: monospace;
-      color: #aaa;
-    }
-
-    .key-separator {
-      color: #555;
-      font-size: 11px;
-    }
-
-    .buttons {
-      display: flex;
-      gap: 10px;
-      margin-top: 20px;
-    }
-
-    .btn-primary {
-      flex: 1;
-      padding: 10px 20px;
-      font-size: 13px;
-      font-weight: 500;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      background: #007AFF;
-      color: #fff;
-      transition: background 0.15s;
-    }
-
-    .btn-primary:hover {
-      background: #0066dd;
-    }
-
-    .btn-primary:disabled {
-      background: #333;
-      color: #666;
-      cursor: not-allowed;
-    }
-
-    .btn-secondary {
-      padding: 10px 20px;
-      font-size: 13px;
-      font-weight: 500;
-      border: 1px solid #333;
-      border-radius: 6px;
-      cursor: pointer;
-      background: transparent;
-      color: #888;
-      transition: all 0.15s;
-    }
-
-    .btn-secondary:hover {
-      border-color: #444;
-      color: #aaa;
-    }
-
-    .permission-warning {
-      background: rgba(255, 149, 0, 0.1);
-      border: 1px solid rgba(255, 149, 0, 0.2);
-      padding: 12px;
-      border-radius: 6px;
-      margin-bottom: 16px;
-    }
-
-    .permission-warning h3 {
-      color: #FF9500;
-      font-size: 12px;
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-
-    .permission-warning p,
-    .permission-warning ol {
-      font-size: 11px;
-      color: #999;
-      line-height: 1.5;
-    }
-
-    .permission-warning ol {
-      margin-top: 6px;
-      margin-left: 16px;
-    }
-
-    .permission-warning li {
-      margin-bottom: 2px;
-    }
+    .foot { font-size: 11px; color: var(--secondary); opacity: 0.75; margin-top: var(--space-16); text-align: center; }
   </style>
 </head>
 <body>
   <div class="drag-region"></div>
-  <h1>Whisp</h1>
-  <p class="subtitle">Voice dictation settings</p>
+  <div class="win-title">Leise Settings</div>
 
-  <div id="permissionWarning" class="permission-warning" style="display: none;">
-    <h3>Accessibility Permission Required</h3>
-    <p>To type text at your cursor, Whisp needs Accessibility permission:</p>
-    <ol>
-      <li>Open System Settings → Privacy & Security → Accessibility</li>
-      <li>Enable the toggle next to Whisp</li>
-    </ol>
-  </div>
+  <div id="warn" class="warn"><b>Accessibility needed to paste at your cursor.</b> System Settings → Privacy &amp; Security → Accessibility → enable Leise.</div>
 
-  <p class="section-label">Transcription Provider</p>
-
-  <!-- Groq Provider Card -->
-  <div class="provider-card selected" id="groqCard" data-provider="groq">
-    <div class="provider-header">
-      <input type="radio" name="provider" class="provider-radio" id="radioGroq" checked>
-      <span class="provider-name">Groq</span>
-      <span class="provider-badge badge-fast">Fast</span>
-      <span class="provider-badge badge-default">Default</span>
-    </div>
-    <div class="provider-content">
-      <div class="api-key-row">
-        <input type="password" id="groqApiKey" placeholder="gsk_..." autocomplete="off">
-        <button class="btn-test" id="testGroqBtn">Test</button>
-      </div>
-      <p class="input-hint">Free key from <a href="#" id="groqLink">console.groq.com</a></p>
-      <div id="testGroqStatus" class="status"></div>
-    </div>
-  </div>
-
-  <!-- OpenAI Provider Card -->
-  <div class="provider-card" id="openaiCard" data-provider="openai">
-    <div class="provider-header">
-      <input type="radio" name="provider" class="provider-radio" id="radioOpenai">
-      <span class="provider-name">OpenAI</span>
-      <span class="provider-badge badge-default">Default</span>
-    </div>
-    <div class="provider-content">
-      <div class="api-key-row">
-        <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off">
-        <button class="btn-test" id="testBtn">Test</button>
-      </div>
-      <p class="input-hint">Get key from <a href="#" id="openaiLink">platform.openai.com</a></p>
-      <div id="testStatus" class="status"></div>
-    </div>
-  </div>
-
-  <div class="shortcuts-section">
-    <p class="section-label">Shortcuts</p>
-    <div class="shortcut-row">
-      <span class="shortcut-label">Record</span>
-      <div class="shortcut-keys">
-        <span class="key">Ctrl</span>
-        <span class="key-separator">+</span>
-        <span class="key">Space</span>
+  <p class="section-label" style="margin-top:4px">Transcription</p>
+  <div class="group">
+    <div class="row">
+      <span>Provider</span>
+      <div class="seg" id="seg">
+        <button type="button" data-p="groq" id="segGroq">Groq</button>
+        <button type="button" data-p="openai" id="segOpenai">OpenAI</button>
       </div>
     </div>
-    <div class="shortcut-row">
-      <span class="shortcut-label">Cancel</span>
-      <div class="shortcut-keys">
-        <span class="key">Esc</span>
-      </div>
+    <div class="row">
+      <span>API Key</span>
+      <span class="keywrap">
+        <input class="keyinput" type="password" id="keyInput" autocomplete="off">
+        <span class="kdot" id="kdot"></span>
+      </span>
     </div>
   </div>
+  <p class="help" id="keyHelp">Validates as you type. Get a free key at <a id="keyLink"></a></p>
 
-  <div class="buttons">
-    <button class="btn-secondary" id="cancelBtn">Cancel</button>
-    <button class="btn-primary" id="saveBtn">Save</button>
+  <p class="section-label">Behavior</p>
+  <div class="group">
+    <div class="row">
+      <span>Appearance</span>
+      <div class="seg" style="width:196px" id="segAppearance">
+        <button type="button" data-a="system">System</button>
+        <button type="button" data-a="light">Light</button>
+        <button type="button" data-a="dark">Dark</button>
+      </div>
+    </div>
+    <div class="row"><span>Sounds</span><button type="button" class="toggle" id="tglSounds" aria-label="Sounds"></button></div>
+    <div class="row"><span>Paste at cursor</span><button type="button" class="toggle" id="tglPaste" aria-label="Paste at cursor"></button></div>
+    <div class="row"><span>Microphone</span><span class="ddwrap"><select id="micSelect"><option value="">System default</option></select></span></div>
   </div>
+
+  <p class="section-label">Shortcut</p>
+  <div class="group">
+    <div class="row">
+      <span>Start or stop recording</span>
+      <button type="button" class="sc-chip" id="scChip">⌃ Space</button>
+    </div>
+  </div>
+  <p class="help" id="scHelp">Click the shortcut, then press the new keys. Esc keeps the current one.</p>
+
+  <p class="section-label">Dictionary</p>
+  <div class="group">
+    <textarea class="vocab" id="vocab" spellcheck="false" placeholder="Names and jargon, one per line or comma-separated. Leise uses them as spelling hints."></textarea>
+  </div>
+  <p class="help">Helps with names, brands, and technical words.</p>
+
+  <div class="foot">Changes apply instantly</div>
 
   <script>
-    const apiKeyInput = document.getElementById('apiKey');
-    const groqApiKeyInput = document.getElementById('groqApiKey');
-    const testBtn = document.getElementById('testBtn');
-    const testGroqBtn = document.getElementById('testGroqBtn');
-    const testStatus = document.getElementById('testStatus');
-    const testGroqStatus = document.getElementById('testGroqStatus');
-    const saveBtn = document.getElementById('saveBtn');
-    const cancelBtn = document.getElementById('cancelBtn');
-    const openaiLink = document.getElementById('openaiLink');
-    const groqLink = document.getElementById('groqLink');
-    const permissionWarning = document.getElementById('permissionWarning');
-    const groqCard = document.getElementById('groqCard');
-    const openaiCard = document.getElementById('openaiCard');
-    const radioGroq = document.getElementById('radioGroq');
-    const radioOpenai = document.getElementById('radioOpenai');
+    const api = window.electronAPI;
+    let config = {};
+    let provider = 'groq';
+    let keyDebounce = null;
+    let armed = false;
 
-    let currentProvider = 'groq';
+    const segGroq = document.getElementById('segGroq');
+    const segOpenai = document.getElementById('segOpenai');
+    const keyInput = document.getElementById('keyInput');
+    const kdot = document.getElementById('kdot');
+    const keyLink = document.getElementById('keyLink');
+    const keyHelp = document.getElementById('keyHelp');
+    const tglSounds = document.getElementById('tglSounds');
+    const tglPaste = document.getElementById('tglPaste');
+    const micSelect = document.getElementById('micSelect');
+    const scChip = document.getElementById('scChip');
+    const scHelp = document.getElementById('scHelp');
 
-    // Provider switching
-    function setProvider(provider) {
-      currentProvider = provider;
-      groqCard.classList.toggle('selected', provider === 'groq');
-      openaiCard.classList.toggle('selected', provider === 'openai');
-      radioGroq.checked = provider === 'groq';
-      radioOpenai.checked = provider === 'openai';
+    const PROVIDERS = {
+      groq: { keyField: 'groqApiKey', placeholder: 'gsk_…', url: 'https://console.groq.com/keys', label: 'console.groq.com', test: (k) => api.testGroqApiKey(k) },
+      openai: { keyField: 'apiKey', placeholder: 'sk-…', url: 'https://platform.openai.com/api-keys', label: 'platform.openai.com', test: (k) => api.testApiKey(k) },
+    };
+
+    function save(patch) {
+      config = { ...config, ...patch };
+      return api.saveConfig(patch);
     }
 
-    // Click on card to select provider
-    groqCard.addEventListener('click', (e) => {
-      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
-        setProvider('groq');
-      }
-    });
-    openaiCard.addEventListener('click', (e) => {
-      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
-        setProvider('openai');
-      }
-    });
+    function renderProvider() {
+      segGroq.classList.toggle('on', provider === 'groq');
+      segOpenai.classList.toggle('on', provider === 'openai');
+      const p = PROVIDERS[provider];
+      keyInput.value = config[p.keyField] || '';
+      keyInput.placeholder = p.placeholder;
+      keyLink.textContent = p.label;
+      kdot.className = 'kdot' + (keyInput.value ? ' busy' : '');
+      if (keyInput.value) validateKey();
+    }
 
-    // Radio button clicks
-    radioGroq.addEventListener('change', () => setProvider('groq'));
-    radioOpenai.addEventListener('change', () => setProvider('openai'));
+    function setProvider(p) {
+      provider = p;
+      save({ transcriptionProvider: p });
+      renderProvider();
+    }
+    segGroq.addEventListener('click', () => setProvider('groq'));
+    segOpenai.addEventListener('click', () => setProvider('openai'));
 
-    // Load existing config
-    window.electronAPI.getConfig().then(config => {
-      if (config.apiKey) {
-        apiKeyInput.value = config.apiKey;
-      }
-      if (config.groqApiKey) {
-        groqApiKeyInput.value = config.groqApiKey;
-      }
-      if (config.transcriptionProvider) {
-        setProvider(config.transcriptionProvider);
-      }
-      if (config.needsAccessibility) {
-        permissionWarning.style.display = 'block';
-      }
-    });
-
-    // Open links
-    openaiLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      require('electron').shell.openExternal('https://platform.openai.com/api-keys');
-    });
-
-    groqLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      require('electron').shell.openExternal('https://console.groq.com/keys');
-    });
-
-    // Test OpenAI API key
-    testBtn.addEventListener('click', async () => {
-      const apiKey = apiKeyInput.value.trim();
-      if (!apiKey) {
-        testStatus.className = 'status error';
-        testStatus.textContent = 'Enter an API key';
-        return;
-      }
-
-      testBtn.disabled = true;
-      testBtn.textContent = '...';
-      testStatus.className = 'status';
-
+    async function validateKey() {
+      const p = PROVIDERS[provider];
+      const key = keyInput.value.trim();
+      if (!key) { kdot.className = 'kdot'; return; }
+      kdot.className = 'kdot busy';
       try {
-        const result = await window.electronAPI.testApiKey(apiKey);
-        if (result.success) {
-          testStatus.className = 'status success';
-          testStatus.textContent = 'Valid';
-        } else {
-          testStatus.className = 'status error';
-          testStatus.textContent = result.error || 'Invalid key';
-        }
+        const result = await p.test(key);
+        // The provider may have changed while the test ran.
+        if (keyInput.value.trim() !== key) return;
+        kdot.className = 'kdot ' + (result.success ? 'ok' : 'bad');
       } catch (err) {
-        testStatus.className = 'status error';
-        testStatus.textContent = 'Test failed';
+        kdot.className = 'kdot bad';
       }
+    }
 
-      testBtn.disabled = false;
-      testBtn.textContent = 'Test';
+    keyInput.addEventListener('input', () => {
+      const p = PROVIDERS[provider];
+      save({ [p.keyField]: keyInput.value.trim() });
+      if (keyDebounce) clearTimeout(keyDebounce);
+      keyDebounce = setTimeout(validateKey, 700);
     });
 
-    // Test Groq API key
-    testGroqBtn.addEventListener('click', async () => {
-      const apiKey = groqApiKeyInput.value.trim();
-      if (!apiKey) {
-        testGroqStatus.className = 'status error';
-        testGroqStatus.textContent = 'Enter an API key';
-        return;
-      }
-
-      testGroqBtn.disabled = true;
-      testGroqBtn.textContent = '...';
-      testGroqStatus.className = 'status';
-
-      try {
-        const result = await window.electronAPI.testGroqApiKey(apiKey);
-        if (result.success) {
-          testGroqStatus.className = 'status success';
-          testGroqStatus.textContent = 'Valid';
-        } else {
-          testGroqStatus.className = 'status error';
-          testGroqStatus.textContent = result.error || 'Invalid key';
-        }
-      } catch (err) {
-        testGroqStatus.className = 'status error';
-        testGroqStatus.textContent = 'Test failed';
-      }
-
-      testGroqBtn.disabled = false;
-      testGroqBtn.textContent = 'Test';
+    keyLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      api.openExternal(PROVIDERS[provider].url);
     });
 
-    // Save settings
-    saveBtn.addEventListener('click', async () => {
-      const apiKey = apiKeyInput.value.trim();
-      const groqApiKey = groqApiKeyInput.value.trim();
+    const segAppearance = document.getElementById('segAppearance');
+    function renderAppearance() {
+      segAppearance.querySelectorAll('button').forEach((b) => {
+        b.classList.toggle('on', b.dataset.a === (config.appearance || 'system'));
+      });
+    }
+    segAppearance.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      save({ appearance: b.dataset.a });
+      renderAppearance();
+    });
 
-      if (currentProvider === 'openai' && !apiKey) {
-        testStatus.className = 'status error';
-        testStatus.textContent = 'Enter OpenAI API key';
-        return;
-      }
-      if (currentProvider === 'groq' && !groqApiKey) {
-        testGroqStatus.className = 'status error';
-        testGroqStatus.textContent = 'Enter Groq API key';
-        return;
-      }
+    function bindToggle(el, field) {
+      el.addEventListener('click', () => {
+        const next = !el.classList.contains('on');
+        el.classList.toggle('on', next);
+        save({ [field]: next });
+      });
+    }
+    bindToggle(tglSounds, 'soundsEnabled');
+    bindToggle(tglPaste, 'autoPasteEnabled');
 
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving...';
-
+    async function loadMics() {
       try {
-        await window.electronAPI.saveConfig({
-          apiKey,
-          groqApiKey,
-          transcriptionProvider: currentProvider
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        devices.filter((d) => d.kind === 'audioinput' && d.deviceId !== 'default').forEach((d, i) => {
+          const opt = document.createElement('option');
+          opt.value = d.deviceId;
+          opt.textContent = d.label || `Microphone ${i + 1}`;
+          micSelect.appendChild(opt);
         });
-        window.electronAPI.closeSettings();
+        micSelect.value = config.preferredInputDeviceId || '';
+        if (micSelect.value !== (config.preferredInputDeviceId || '')) micSelect.value = '';
       } catch (err) {
-        const statusEl = currentProvider === 'openai' ? testStatus : testGroqStatus;
-        statusEl.className = 'status error';
-        statusEl.textContent = 'Save failed';
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Save';
+        console.error('enumerateDevices failed:', err);
       }
+    }
+    micSelect.addEventListener('change', () => {
+      save({ preferredInputDeviceId: micSelect.value });
     });
 
-    // Cancel
-    cancelBtn.addEventListener('click', () => {
-      window.electronAPI.closeSettings();
+    // Shortcut recorder
+    const KEY_GLYPHS = { Control: '⌃', Alt: '⌥', Shift: '⇧', Meta: '⌘', Command: '⌘', CommandOrControl: '⌘' };
+    function displayShortcut(acc) {
+      return (acc || 'Control+Space')
+        .split('+')
+        .map((part) => KEY_GLYPHS[part] || part)
+        .join(' ');
+    }
+    function renderShortcut() {
+      scChip.textContent = displayShortcut(config.shortcut);
+      scChip.classList.remove('arming');
+      scHelp.innerHTML = 'Click the shortcut, then press the new keys. Esc keeps the current one.';
+      armed = false;
+    }
+    scChip.addEventListener('click', () => {
+      if (armed) return;
+      armed = true;
+      scChip.classList.add('arming');
+      scChip.textContent = 'Press keys…';
+    });
+    window.addEventListener('keydown', async (e) => {
+      if (!armed) {
+        if (e.key === 'Escape') api.closeSettings();
+        return;
+      }
+      e.preventDefault();
+      if (e.key === 'Escape') { renderShortcut(); return; }
+      const mods = [];
+      if (e.ctrlKey) mods.push('Control');
+      if (e.altKey) mods.push('Alt');
+      if (e.shiftKey) mods.push('Shift');
+      if (e.metaKey) mods.push('Command');
+      if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+      if (mods.length === 0) return; // require at least one modifier
+      let key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      if (e.code === 'Space') key = 'Space';
+      const accelerator = [...mods, key].join('+');
+      const result = await save({ shortcut: accelerator });
+      if (result && result.shortcutError) {
+        scHelp.innerHTML = '<span class="err">' + result.shortcutError + '</span>';
+        config.shortcut = result.shortcut || config.shortcut;
+        scChip.classList.remove('arming');
+        scChip.textContent = displayShortcut(config.shortcut);
+        armed = false;
+        return;
+      }
+      renderShortcut();
+    });
+
+    // Product name in window chrome (one constant, src/product.js)
+    document.title = api.productName + ' Settings';
+    document.querySelector('.win-title').textContent = api.productName + ' Settings';
+    document.querySelector('#warn').innerHTML = '<b>Accessibility needed to paste at your cursor.</b> System Settings → Privacy &amp; Security → Accessibility → enable ' + api.productName + '.';
+
+    const vocab = document.getElementById('vocab');
+    let vocabDebounce = null;
+    vocab.addEventListener('input', () => {
+      if (vocabDebounce) clearTimeout(vocabDebounce);
+      vocabDebounce = setTimeout(() => save({ customVocabulary: vocab.value }), 600);
+    });
+
+    // Init
+    api.getConfig().then((cfg) => {
+      config = cfg || {};
+      provider = config.transcriptionProvider || 'groq';
+      tglSounds.classList.toggle('on', config.soundsEnabled !== false);
+      tglPaste.classList.toggle('on', config.autoPasteEnabled !== false);
+      vocab.value = config.customVocabulary || '';
+      if (config.needsAccessibility) document.getElementById('warn').classList.add('visible');
+      renderProvider();
+      renderAppearance();
+      renderShortcut();
+      loadMics();
     });
   </script>
 </body>
