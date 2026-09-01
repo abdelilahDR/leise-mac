@@ -1388,6 +1388,35 @@ if (process.env.WHISP_UITEST) {
         clearInterval(lightLevels);
         await snap(settingsWindow, 'settings-light');
         console.log('[uitest] captured:', JSON.stringify(shots));
+
+        // Optional burst capture of the live overlay loop for the README GIF.
+        if (process.env.WHISP_UITEST_GIF) {
+          nativeTheme.themeSource = 'dark'; // the README hero is the dark capsule
+          await new Promise((r) => setTimeout(r, 300));
+          const frameDir = path.join(outDir, 'gif-frames');
+          if (!fs.existsSync(frameDir)) fs.mkdirSync(frameDir, { recursive: true });
+          let frame = 0;
+          const grab = async () => {
+            if (!overlayWindow || overlayWindow.isDestroyed()) return;
+            const img = await overlayWindow.webContents.capturePage();
+            fs.writeFileSync(path.join(frameDir, `f-${String(frame++).padStart(3, '0')}.png`), img.toPNG());
+          };
+          showOverlay('recording');
+          const gifLevels = setInterval(() => {
+            if (overlayWindow && !overlayWindow.isDestroyed()) {
+              overlayWindow.webContents.send('audio-levels', fakeLevels());
+            }
+          }, 50);
+          const burst = setInterval(grab, 90);
+          await new Promise((r) => setTimeout(r, 2100));
+          clearInterval(gifLevels);
+          showOverlay('transcribing');
+          await new Promise((r) => setTimeout(r, 1300));
+          showOverlay('success');
+          await new Promise((r) => setTimeout(r, 1900));
+          clearInterval(burst);
+          console.log('[uitest] gif frames:', frame);
+        }
       } catch (err) {
         console.error('[uitest] failed:', err);
       } finally {
