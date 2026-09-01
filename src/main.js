@@ -49,6 +49,34 @@ function playSound(soundName) {
 // Configuration Management
 // ============================================
 
+// One-time migration from the app's previous name: if this userData is
+// fresh and a legacy dir exists, carry config and history over. Encrypted
+// keys cannot survive the rename (safeStorage is keyed to the app name),
+// so the key is re-entered once in Settings.
+(function migrateLegacyUserData() {
+  try {
+    const fresh = !fs.existsSync(path.join(app.getPath('userData'), 'config.json'));
+    if (!fresh) return;
+    const appSupport = path.dirname(app.getPath('userData'));
+    for (const legacy of ['whisp', 'Whisp']) {
+      const oldDir = path.join(appSupport, legacy);
+      const oldConfig = path.join(oldDir, 'config.json');
+      if (fs.existsSync(oldConfig)) {
+        fs.mkdirSync(app.getPath('userData'), { recursive: true });
+        fs.copyFileSync(oldConfig, path.join(app.getPath('userData'), 'config.json'));
+        const oldHistory = path.join(oldDir, 'history.json');
+        if (fs.existsSync(oldHistory)) {
+          fs.copyFileSync(oldHistory, path.join(app.getPath('userData'), 'history.json'));
+        }
+        console.log('[main] migrated userData from', oldDir);
+        return;
+      }
+    }
+  } catch (err) {
+    console.error('[main] legacy userData migration failed:', err);
+  }
+})();
+
 const configPath = path.join(app.getPath('userData'), 'config.json');
 const historyPath = path.join(app.getPath('userData'), 'history.json');
 const HISTORY_MAX = 20;

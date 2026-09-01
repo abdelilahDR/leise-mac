@@ -2,5 +2,5 @@
 // line plus package.json (productName, appId), which electron-builder needs
 // as static strings.
 module.exports = {
-  PRODUCT_NAME: 'Whisp',
+  PRODUCT_NAME: 'Leise',
 };

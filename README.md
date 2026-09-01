@@ -1,8 +1,8 @@
-# Whisp
+# Leise
 
 Voice to text, anywhere you type. A macOS menubar app.
 
-![The Whisp overlay recording, transcribing, and finishing](docs/overlay.gif)
+![The Leise overlay recording, transcribing, and finishing](docs/overlay.gif)
 
 Press `⌃Space`, speak, press it again. Your words land wherever your cursor is.
 
@@ -16,13 +16,13 @@ Press `⌃Space`, speak, press it again. Your words land wherever your cursor is
 
 - Live waveform overlay with recording, transcribing, and inserted states, in light and dark
 - API keys stored encrypted through the macOS Keychain, never in plain text
-- Dictionary: list your names and jargon once, Whisp uses them as spelling hints
+- Dictionary: list your names and jargon once, Leise uses them as spelling hints
 - Copy Last and recent transcriptions in the menubar menu
 - Configurable shortcut, microphone picker, sounds and auto-paste toggles
 - `Esc` cancels quietly; the transcript still lands in history
 - `⏎` also stops a recording
 
-<img src="docs/settings.png" alt="Whisp settings" width="380">
+<img src="docs/settings.png" alt="Leise settings" width="380">
 
 ## Install
 

@@ -1,5 +1,5 @@
 {
-  "name": "whisp",
+  "name": "leise",
   "version": "1.6.4",
   "description": "macOS voice dictation app using OpenAI Whisper",
   "main": "src/main.js",
@@ -19,8 +19,8 @@
     "node-fetch": "^2.7.0"
   },
   "build": {
-    "appId": "com.moonsight.whisp",
-    "productName": "Whisp",
+    "appId": "com.moonsight.leise",
+    "productName": "Leise",
     "files": [
       "**/*",
       "!.claude",
@@ -29,12 +29,15 @@
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "build/icon.png",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "hardenedRuntime": true,
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Whisp needs microphone access to transcribe your speech.",
+        "NSMicrophoneUsageDescription": "Leise needs microphone access to transcribe your speech.",
         "LSUIElement": true
       }
     }
