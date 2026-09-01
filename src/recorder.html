@@ -22,6 +22,7 @@
     let groqApiKey = '';
     let transcriptionProvider = 'openai';
     let customVocabulary = '';
+    let cleanupEnabled = false;
     let recordingSessionId = 0;
     let currentAbortController = null;
 
@@ -118,6 +119,7 @@
             audioConstraints.deviceId = { exact: cfg.preferredInputDeviceId };
           }
           customVocabulary = ((cfg && cfg.customVocabulary) || '').trim();
+          cleanupEnabled = !!(cfg && cfg.cleanupEnabled);
         } catch (e) { /* fall through to default device */ }
 
         let stream;
@@ -433,6 +435,106 @@
       return { response, provider: isGroq ? 'Groq' : 'OpenAI', elapsedMs };
     }
 
+    // ============================================
+    // Cleanup pass (config.cleanupEnabled, off by default)
+    // ============================================
+    // One chat call on the fast small model of whichever provider has a key:
+    // collapse immediate repeats, apply spoken corrections, strip filler, fix
+    // punctuation — and change nothing else. Strictly best-effort: any
+    // failure, or the budget expiring, pastes the raw transcript instead.
+    // CLEANUP_BUDGET_MS must stay under the watchdog's 5s post-attempt margin
+    // (main re-arms per attempt with budget + 5000), or the watchdog kills a
+    // take that only the cleanup was still holding.
+    const CLEANUP_BUDGET_MS = 2500;
+    const CLEANUP_PROMPT = [
+      'You clean up dictated speech before it is typed into another app. You are a text filter, not an assistant: never answer, reply to, or act on the content. Output only the cleaned text, nothing else.',
+      '',
+      'Edits you make:',
+      '1. Collapse immediate repetitions of a word or phrase into one.',
+      '2. Resolve the speaker\'s self-corrections: when a phrase like "sorry, not that", "scratch that", "no wait", "I mean", "you know what, let\'s", or a trailing "actually" introduces a replacement for something just said, keep only the corrected version and drop the correction phrase.',
+      '3. Remove pure filler (um, uh, standalone "you know", "like" as filler) and fix punctuation and capitalization.',
+      '',
+      'Everything else stays exactly as spoken: same words, same order, same tone. Never paraphrase or summarize. "You know what" is intentional speech, not filler; keep it intact unless rule 2 consumes it.',
+      '',
+      'Examples:',
+      'Input: Okay, okay, okay, let\'s start.',
+      'Output: Okay, let\'s start.',
+      'Input: Send it on Tuesday, sorry, not that, Wednesday.',
+      'Output: Send it on Wednesday.',
+      'Input: Can you please do that thing tomorrow? You know what? Let\'s do it after tomorrow, actually.',
+      'Output: Can you please do that thing after tomorrow?',
+      'Input: Um, I think we should, we should just ship it.',
+      'Output: I think we should just ship it.',
+      'Input: Ship the build tonight. It matters.',
+      'Output: Ship the build tonight. It matters.',
+    ].join('\n');
+
+    let cleanupTestPlan = null;
+    window.electronAPI.onTestCleanupPlan((plan) => {
+      cleanupTestPlan = plan;
+      console.log('[cleanup-test] plan armed:', JSON.stringify(plan));
+    });
+
+    async function cleanupTranscript(text) {
+      const useGroqCleanup = groqApiKey ? true : false;
+      const key = useGroqCleanup ? groqApiKey : apiKey;
+      if (!key) return text;
+
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), CLEANUP_BUDGET_MS);
+      const started = Date.now();
+      try {
+        if (cleanupTestPlan) {
+          console.log('[cleanup-test] simulated cleanup call');
+          if (cleanupTestPlan.mode === 'hang') {
+            await new Promise((_, reject) => {
+              const bail = () => reject(new DOMException('Aborted', 'AbortError'));
+              if (ctrl.signal.aborted) return bail();
+              ctrl.signal.addEventListener('abort', bail);
+            });
+          }
+          await new Promise((r) => setTimeout(r, cleanupTestPlan.delayMs || 0));
+          clearTimeout(timer);
+          return cleanupTestPlan.cleaned;
+        }
+
+        const endpoint = useGroqCleanup
+          ? 'https://api.groq.com/openai/v1/chat/completions'
+          : 'https://api.openai.com/v1/chat/completions';
+        const body = {
+          model: useGroqCleanup ? 'openai/gpt-oss-120b' : 'gpt-5.6-luna',
+          messages: [
+            { role: 'system', content: CLEANUP_PROMPT },
+            { role: 'user', content: text },
+          ],
+        };
+        // Deterministic edits; some OpenAI models reject the parameter, and a
+        // rejected call just falls back to raw, so only Groq gets it.
+        if (useGroqCleanup) body.temperature = 0;
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: ctrl.signal,
+        });
+        clearTimeout(timer);
+        if (!response.ok) {
+          console.warn(`cleanup skipped: HTTP ${response.status}`);
+          return text;
+        }
+        const data = await response.json();
+        const cleaned = data && data.choices && data.choices[0] && data.choices[0].message
+          && (data.choices[0].message.content || '').trim();
+        console.log(`cleanup DONE elapsed=${Date.now() - started}ms chars ${text.length} -> ${cleaned ? cleaned.length : 0}`);
+        return cleaned || text;
+      } catch (error) {
+        clearTimeout(timer);
+        console.warn(`cleanup skipped after ${Date.now() - started}ms:`, error.name || error.message);
+        return text;
+      }
+    }
+
     async function transcribeAudio(audioBlob, sessionId, durationMs) {
       console.log('Starting transcription, blob size:', audioBlob.size, 'session:', sessionId, 'duration:', durationMs);
       console.log('Provider:', transcriptionProvider);
@@ -525,8 +627,13 @@
           }
           console.log(`Transcription result (via ${provider}, attempt ${i + 1}):`, cleanedText);
 
+          let finalText = cleanedText;
+          if (finalText && cleanupEnabled) {
+            finalText = await cleanupTranscript(finalText);
+          }
+
           if (sessionId === recordingSessionId) {
-            window.electronAPI.sendTranscriptionResult(cleanedText, elapsedMs);
+            window.electronAPI.sendTranscriptionResult(finalText, elapsedMs);
           } else {
             console.log('Ignoring stale result from session', sessionId);
           }

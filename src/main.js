@@ -98,6 +98,9 @@ if (process.env.LEISE_AUTOSTOP_TEST) {
 if (process.env.LEISE_RETRY_TEST) {
   app.setPath('userData', path.join(app.getPath('temp'), 'leise-retry-test-' + process.pid));
 }
+if (process.env.LEISE_CLEANUP_TEST) {
+  app.setPath('userData', path.join(app.getPath('temp'), 'leise-cleanup-test-' + process.pid));
+}
 // Fixed dir (no pid): the relaunched child must land in the same userData so
 // the runner can read its report. Seeded as onboarded so the launch is the
 // steady-state one and the relaunch logic is reachable.
@@ -156,6 +159,7 @@ const CONFIG_DEFAULTS = {
   soundsEnabled: true,
   autoPasteEnabled: true,
   autoStopEnabled: false, // stop recording on sustained silence after speech
+  cleanupEnabled: false, // LLM pass: collapse repeats, apply spoken corrections, strip filler
   preferredInputDeviceId: '',
   appearance: 'system', // system | light | dark, drives nativeTheme.themeSource
   customVocabulary: '', // names and jargon, passed to Whisper as a spelling hint
@@ -1506,8 +1510,8 @@ app.whenReady().then(() => {
   // schedules, and a relaunched test child must not relaunch again.
   const suppressRelaunch = process.env.WHISP_UITEST || process.env.LEISE_FOCUS_TEST ||
     process.env.LEISE_ONBOARD_TEST || process.env.LEISE_AUTOSTOP_TEST ||
-    process.env.LEISE_RETRY_TEST || process.env.LEISE_FRESH ||
-    process.argv.includes('--leise-relaunch-child');
+    process.env.LEISE_RETRY_TEST || process.env.LEISE_CLEANUP_TEST || process.env.LEISE_CLEANUP_LIVE ||
+    process.env.LEISE_FRESH || process.argv.includes('--leise-relaunch-child');
   if (!suppressRelaunch) {
     setInterval(maybeSelfRelaunch, RELAUNCH_CHECK_MS);
   }
@@ -1700,6 +1704,80 @@ if (process.env.LEISE_RETRY_TEST) {
     const budgetOk = recorderBudget === 35000 && transcriptionBudgetMs(300000) === 35000;
     console.log(`[retry-test] chain=${chain ? 'PASS' : 'FAIL (got ' + JSON.stringify(gotResult) + ')'} attempts=${attempts} watchdog=${watchdogQuiet ? 'quiet' : 'FIRED-or-armed'} budget5min=${budgetOk ? 'PASS' : 'FAIL (' + recorderBudget + ')'}`);
     clearWatchdog();
+    app.quit();
+  });
+}
+
+// Live cleanup driver (LEISE_CLEANUP_LIVE="text"): runs the real cleanup call
+// with the real config and keys against the given text, prints the model's
+// output, quits. Read-only — no recording, no config writes, no isolation
+// (the point is the real key and the real request).
+if (process.env.LEISE_CLEANUP_LIVE) {
+  app.whenReady().then(async () => {
+    await new Promise((r) => setTimeout(r, 1800));
+    const text = process.env.LEISE_CLEANUP_LIVE;
+    try {
+      const out = await recorderWindow.webContents.executeJavaScript(
+        `cleanupEnabled = true; cleanupTranscript(${JSON.stringify(text)})`);
+      console.log('[cleanup-live] IN :', text);
+      console.log('[cleanup-live] OUT:', out);
+    } catch (e) {
+      console.error('[cleanup-live] driver failed:', e.message);
+    }
+    app.quit();
+  });
+}
+
+// Cleanup-pass probe (LEISE_CLEANUP_TEST=1): settings click lands in config,
+// a cleaned transcript replaces the raw one on the happy path, and a hung
+// cleanup call falls back to the raw transcript at the real 2.5s budget.
+if (process.env.LEISE_CLEANUP_TEST) {
+  app.whenReady().then(async () => {
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    await tick(1200);
+    const results = [];
+
+    // Settings toggle wires to config through save-config.
+    config.cleanupEnabled = false;
+    createSettingsWindow();
+    await tick(1400);
+    await settingsWindow.webContents.executeJavaScript(
+      `document.getElementById('tglCleanup').click()`);
+    await tick(400);
+    results.push(`settingsToggle=${config.cleanupEnabled === true ? 'PASS' : 'FAIL'}`);
+
+    let lastResult = null;
+    let resolveResult = null;
+    ipcMain.on('transcription-result', (event, text) => {
+      lastResult = text;
+      if (resolveResult) resolveResult();
+    });
+    recorderWindow.webContents.send('set-groq-api-key', 'probe-key');
+    recorderWindow.webContents.send('set-transcription-provider', 'groq');
+    await recorderWindow.webContents.executeJavaScript('cleanupEnabled = true; 1');
+
+    const drive = async (raw, cleanupPlan, waitMs) => {
+      recorderWindow.webContents.send('test-transcription-plan', { failFirst: 0, fakeResult: raw });
+      recorderWindow.webContents.send('test-cleanup-plan', cleanupPlan);
+      await tick(200);
+      lastResult = null;
+      const seen = new Promise((r) => { resolveResult = r; });
+      wasCancelled = true;
+      startWatchdog(transcriptionBudgetMs(0) + 5000);
+      recorderWindow.webContents.executeJavaScript(
+        'transcribeAudio(new Blob([new Uint8Array(1500)]), recordingSessionId, 2000)');
+      await Promise.race([seen, tick(waitMs)]);
+      return lastResult;
+    };
+
+    const cleaned = await drive('okay okay okay raw', { mode: 'ok', cleaned: 'okay', delayMs: 150 }, 6000);
+    results.push(`cleanApplied=${cleaned === 'okay' ? 'PASS' : 'FAIL (' + JSON.stringify(cleaned) + ')'}`);
+
+    const fallback = await drive('raw text stays', { mode: 'hang' }, 8000);
+    results.push(`budgetFallback=${fallback === 'raw text stays' ? 'PASS' : 'FAIL (' + JSON.stringify(fallback) + ')'}`);
+
+    clearWatchdog();
+    console.log('[cleanup-test]', results.join(' '));
     app.quit();
   });
 }

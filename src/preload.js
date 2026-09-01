@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notifyTranscriptionAttempt: (info) => ipcRenderer.send('transcription-attempt', info),
   flushNetwork: (reason) => ipcRenderer.send('flush-network', reason),
   onTestTranscriptionPlan: (callback) => ipcRenderer.on('test-transcription-plan', (_event, plan) => callback(plan)),
+  onTestCleanupPlan: (callback) => ipcRenderer.on('test-cleanup-plan', (_event, plan) => callback(plan)),
 
   // Overlay (wrap callbacks for contextBridge compatibility)
   onUpdateOverlay: (callback) => ipcRenderer.on('update-overlay', (_event, data) => callback(data)),
