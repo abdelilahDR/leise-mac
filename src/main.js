@@ -158,6 +158,8 @@ function saveConfig(newConfig) {
     for (const field of KEY_FIELDS) {
       const enc = encryptKey(onDisk[field]);
       if (enc !== null) {
+        // A fresh key replaces any stale ciphertext; without one, a stale
+        // blob already in memory rides along untouched.
         if (enc) onDisk[field + 'Enc'] = enc;
         delete onDisk[field];
       }
@@ -224,8 +226,18 @@ function hydrateKeys() {
   for (const field of KEY_FIELDS) {
     if (config[field]) hadPlaintext = true;
     const enc = config[field + 'Enc'];
-    if (enc && !config[field]) config[field] = decryptKey(enc);
-    delete config[field + 'Enc'];
+    if (enc && !config[field]) {
+      const dec = decryptKey(enc);
+      if (dec) {
+        config[field] = dec;
+        delete config[field + 'Enc'];
+      }
+      // Decryption failed (for example after an app rename, when the
+      // Keychain service no longer matches). Keep the ciphertext in memory
+      // so later saves preserve it on disk instead of destroying it.
+    } else if (enc) {
+      delete config[field + 'Enc'];
+    }
   }
   if (hadPlaintext && (config.apiKey || config.groqApiKey)) saveConfig(config);
 }
