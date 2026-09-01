@@ -52,4 +52,6 @@ To build a standalone app: `npm run build`, then install from `dist/`.
 
 ## License
 
-MIT © Moonsight
+MIT © [Moonsight](https://moonsight.studio)
+
+Made by [Abdel](https://abdel.design).
