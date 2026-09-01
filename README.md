@@ -29,8 +29,8 @@ Press `⌃Space`, speak, press it again. Your words land wherever your cursor is
 You need Node 18+ and an API key: [console.groq.com](https://console.groq.com/keys) (free) or [platform.openai.com](https://platform.openai.com/api-keys).
 
 ```bash
-git clone https://github.com/abdelilahDR/voice-dictation-mac.git
-cd voice-dictation-mac
+git clone https://github.com/abdelilahDR/leise-mac.git
+cd leise-mac
 npm install
 npm start
 ```
