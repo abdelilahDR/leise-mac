@@ -1274,8 +1274,8 @@ if (process.env.WHISP_UITEST) {
         shots.push(file);
       }).catch((err) => console.error('[uitest] capture failed:', name, err.message));
     };
-    const fakeLevels = () => Array.from({ length: 13 }, (_, i) => {
-      const c = Math.abs(i - 6) / 6;
+    const fakeLevels = () => Array.from({ length: 17 }, (_, i) => {
+      const c = Math.abs(i - 8) / 8;
       return Math.max(0.05, (0.85 - c * 0.6) * (0.4 + 0.6 * Math.random()));
     });
 

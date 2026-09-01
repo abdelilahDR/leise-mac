@@ -181,12 +181,12 @@
 
           analyser.getByteFrequencyData(dataArray);
 
-          // 13 log-spaced bands, 80Hz to 5kHz. Linear splits put nearly all
-          // speech energy in the first band (one tall bar, twelve dead dots);
+          // 17 log-spaced bands, 80Hz to 5kHz. Linear splits put nearly all
+          // speech energy in the first band (one tall bar, a row of dead dots);
           // log spacing spreads voice across every bar. The AudioContext runs
           // at the device rate (usually 48k), so band edges are computed from
           // the real bin width, never assumed.
-          const BAND_COUNT = 13;
+          const BAND_COUNT = 17;
           const binHz = (audioContext.sampleRate / 2) / bufferLength;
           const FMIN = 80, FMAX = 5000;
           const levels = [];

@@ -39,7 +39,7 @@
     /* No backdrop-filter here: a transparent Electron window has no backdrop
        to sample, and Chromium paints a ghost pill around the element instead. */
     .capsule {
-      width: 158px;
+      width: 178px;
       height: 42px;
       border-radius: 21px;
       display: flex;
@@ -172,7 +172,7 @@
     const msgText = document.getElementById('msgText');
     const msgKbd = document.getElementById('msgKbd');
 
-    const BAR_COUNT = 13;
+    const BAR_COUNT = 17;
     const bars = [];
     for (let i = 0; i < BAR_COUNT; i++) {
       const b = document.createElement('i');
@@ -184,7 +184,11 @@
     function bandForPosition(i) {
       return Math.abs(i - CENTER) * 2 - (i < CENTER ? 1 : 0);
     }
-    const LEVEL_GAIN = 2.0;
+    // Meter curve: gate out the room's noise floor, then a soft 0.75-power
+    // knee so speech lives mid-range instead of clipping to a wall.
+    const LEVEL_FLOOR = 0.09;
+    const LEVEL_GAIN = 1.6;
+    const LEVEL_EXP = 0.75;
 
     let startTime = Date.now();
     let timerInterval = null;
@@ -254,8 +258,8 @@
       if (!Array.isArray(levels)) return;
       for (let i = 0; i < BAR_COUNT; i++) {
         const level = levels[bandForPosition(i)] || 0;
-        // sqrt lifts quiet speech into the visible range without clipping loud
-        const v = Math.min(1, Math.sqrt(level * LEVEL_GAIN));
+        const gated = Math.max(0, level - LEVEL_FLOOR) * LEVEL_GAIN;
+        const v = Math.min(1, Math.pow(gated, LEVEL_EXP));
         const h = 4 + v * 20;
         bars[i].style.height = h.toFixed(1) + 'px';
       }
