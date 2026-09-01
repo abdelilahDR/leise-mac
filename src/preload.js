@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendRecordingStatus: (status) => ipcRenderer.send('recording-status', status),
   sendAudioLevels: (levels) => ipcRenderer.send('audio-levels', levels),
   notifyNetworkChange: (state) => ipcRenderer.send('network-changed', state),
+  notifyTranscriptionAttempt: (info) => ipcRenderer.send('transcription-attempt', info),
+  flushNetwork: (reason) => ipcRenderer.send('flush-network', reason),
+  onTestTranscriptionPlan: (callback) => ipcRenderer.on('test-transcription-plan', (_event, plan) => callback(plan)),
 
   // Overlay (wrap callbacks for contextBridge compatibility)
   onUpdateOverlay: (callback) => ipcRenderer.on('update-overlay', (_event, data) => callback(data)),

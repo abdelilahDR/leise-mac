@@ -92,6 +92,27 @@ if (process.env.LEISE_ONBOARD_TEST) {
 if (process.env.LEISE_FRESH) {
   app.setPath('userData', path.join(app.getPath('temp'), 'leise-fresh-demo'));
 }
+if (process.env.LEISE_AUTOSTOP_TEST) {
+  app.setPath('userData', path.join(app.getPath('temp'), 'leise-autostop-test-' + process.pid));
+}
+if (process.env.LEISE_RETRY_TEST) {
+  app.setPath('userData', path.join(app.getPath('temp'), 'leise-retry-test-' + process.pid));
+}
+// Fixed dir (no pid): the relaunched child must land in the same userData so
+// the runner can read its report. Seeded as onboarded so the launch is the
+// steady-state one and the relaunch logic is reachable.
+if (process.env.LEISE_RELAUNCH_TEST) {
+  const dir = path.join(app.getPath('temp'), 'leise-relaunch-test');
+  app.setPath('userData', dir);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({
+      onboardingComplete: true, transcriptionProvider: 'groq', groqApiKey: 'probe-key',
+    }));
+  } catch (e) {
+    console.error('[relaunch-test] seed failed:', e);
+  }
+}
 
 const configPath = path.join(app.getPath('userData'), 'config.json');
 const historyPath = path.join(app.getPath('userData'), 'history.json');
@@ -134,6 +155,7 @@ const CONFIG_DEFAULTS = {
   shortcut: 'Control+Space',
   soundsEnabled: true,
   autoPasteEnabled: true,
+  autoStopEnabled: false, // stop recording on sustained silence after speech
   preferredInputDeviceId: '',
   appearance: 'system', // system | light | dark, drives nativeTheme.themeSource
   customVocabulary: '', // names and jargon, passed to Whisper as a spelling hint
@@ -268,6 +290,7 @@ let overlayWindow = null;
 let settingsWindow = null;
 let onboardingWindow = null;
 let isRecording = false;
+let recordingStartedAt = 0;
 let isTestRecording = false;
 let escapeRegistered = false;
 let enterRegistered = false;
@@ -368,10 +391,17 @@ function noteTranscriptionSuccess() {
 // firing) and force-reset so the user can retry without restarting.
 const WATCHDOG_MS = 15000;
 
-function startWatchdog() {
+// Mirrors transcriptionBudgetMs in recorder.html — one curve gives the
+// recorder its per-attempt fetch timeout and main its watchdog. A 5-minute
+// take is a bigger upload; a fixed short ceiling was cutting long dictations.
+function transcriptionBudgetMs(durationMs) {
+  return Math.min(45000, 10000 + Math.round((durationMs || 0) / 12));
+}
+
+function startWatchdog(ms = WATCHDOG_MS) {
   clearWatchdog();
   watchdogTimer = setTimeout(() => {
-    console.warn(`[main] watchdog fired — transcription stuck >${WATCHDOG_MS}ms, force-resetting`);
+    console.warn(`[main] watchdog fired — transcription stuck >${ms}ms, force-resetting`);
     watchdogTimer = null;
     if (recorderWindow && !recorderWindow.isDestroyed()) {
       recorderWindow.webContents.send('abort-transcription');
@@ -821,11 +851,14 @@ function startRecording() {
   }
 
   isRecording = true;
+  recordingStartedAt = Date.now();
+  noteActivity();
   // A dismiss/cancel from a PREVIOUS overlay must never bleed into this
   // recording. If userDismissed stayed true, this recording's result would be
   // silently dropped and the overlay would hang on "Transcribing…" forever.
   userDismissed = false;
   wasCancelled = false;
+  resetAutoStop();
   updateTrayIcon('recording');
   updateTrayMenu();
   playSound('Pop'); // Audio feedback for recording start
@@ -858,10 +891,14 @@ function stopRecording() {
   if (!isRecording) return;
 
   isRecording = false;
+  noteActivity();
   updateTrayIcon(wasCancelled ? 'idle' : 'transcribing');
   updateTrayMenu();
   playSound('Tink'); // Audio feedback for recording stop
-  startWatchdog();
+  // Watchdog budget scales with the recording length, like the recorder's own
+  // fetch timeout; per-attempt IPC re-arms it while the retry chain runs.
+  const recordedMs = recordingStartedAt ? Date.now() - recordingStartedAt : 0;
+  startWatchdog(transcriptionBudgetMs(recordedMs) + 5000);
 
   // Update overlay — when cancelled, hide immediately. Transcription still
   // runs in the background and the result lands silently in tray history.
@@ -917,6 +954,91 @@ function resetToIdle() {
   if (enterRegistered) {
     globalShortcut.unregister('Return');
     enterRegistered = false;
+  }
+}
+
+// ============================================
+// Scheduled self-relaunch
+// ============================================
+// Multi-day uptime wears out state that recycling the recorder window and
+// flushing the NetworkService cannot fully reset; the proven fix has been
+// quitting and reopening the app every few days. This automates exactly that,
+// only when nothing is in flight and the user has been away for a while.
+// LSUIElement plus a completed onboarding make the relaunch invisible: no
+// dock icon, no windows, no focus change; the tray icon is back in a second.
+
+const RELAUNCH_TEST = !!process.env.LEISE_RELAUNCH_TEST;
+const RELAUNCH_UPTIME_MS = RELAUNCH_TEST ? 3000 : 48 * 3600 * 1000;
+const RELAUNCH_IDLE_MS = RELAUNCH_TEST ? 500 : 15 * 60 * 1000;
+const RELAUNCH_CHECK_MS = RELAUNCH_TEST ? 250 : 30 * 60 * 1000;
+const appStartedAt = Date.now();
+let lastActivityAt = Date.now();
+
+function noteActivity() {
+  lastActivityAt = Date.now();
+}
+
+function maybeSelfRelaunch() {
+  // An unconfigured app relaunches into the Settings-window path — a visible
+  // surface. Hygiene only ever runs on a fully set up, invisible steady state.
+  if (!config.onboardingComplete || !hasActiveKey()) return;
+  if (isRecording || watchdogTimer) return;
+  if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) return;
+  if (settingsWindow && !settingsWindow.isDestroyed()) return;
+  if (onboardingWindow && !onboardingWindow.isDestroyed()) return;
+  if (Date.now() - appStartedAt < RELAUNCH_UPTIME_MS) return;
+  if (Date.now() - lastActivityAt < RELAUNCH_IDLE_MS) return;
+  console.warn(`[main] self-relaunch: uptime ${Math.round((Date.now() - appStartedAt) / 60000)}min, idle ${Math.round((Date.now() - lastActivityAt) / 60000)}min — fresh process, fresh network stack`);
+  app.relaunch(RELAUNCH_TEST ? { args: process.argv.slice(1).concat('--leise-relaunch-child') } : undefined);
+  app.quit();
+}
+
+// ============================================
+// Auto-stop on silence (config.autoStopEnabled, off by default)
+// ============================================
+// Runs on the level frames the recorder already sends every 50ms. Speech must
+// hold above the floor for a few consecutive frames before silence starts the
+// countdown — a keyboard click or door thud alone can't arm it and cut off a
+// recording the user is still thinking into. The floor mirrors the overlay's
+// LEVEL_FLOOR so the meter and the stop share one definition of quiet.
+
+const AUTO_STOP_FLOOR = 0.09; // = LEVEL_FLOOR in overlay.html
+const AUTO_STOP_ARM_FRAMES = 3; // consecutive voiced frames (~150ms) to arm
+const AUTO_STOP_SILENCE_MS = 2000;
+
+let autoStopVoicedRun = 0;
+let autoStopArmed = false;
+let autoStopLastVoiceAt = 0;
+
+function resetAutoStop() {
+  autoStopVoicedRun = 0;
+  autoStopArmed = false;
+  autoStopLastVoiceAt = 0;
+}
+
+function handleAudioLevels(levels) {
+  if (!isRecording || !config.autoStopEnabled) return;
+  if (!Array.isArray(levels) || levels.length === 0) return;
+
+  let peak = 0;
+  for (const v of levels) if (v > peak) peak = v;
+  const now = Date.now();
+
+  if (peak >= AUTO_STOP_FLOOR) {
+    autoStopVoicedRun += 1;
+    if (autoStopVoicedRun >= AUTO_STOP_ARM_FRAMES) autoStopArmed = true;
+    autoStopLastVoiceAt = now;
+    return;
+  }
+
+  if (!autoStopArmed) {
+    autoStopVoicedRun = 0;
+    return;
+  }
+
+  if (now - autoStopLastVoiceAt >= AUTO_STOP_SILENCE_MS) {
+    console.log('[main] auto-stop: silence after speech');
+    stopRecording();
   }
 }
 
@@ -977,6 +1099,7 @@ ipcMain.handle('get-config', () => {
 });
 
 ipcMain.handle('save-config', (event, newConfig) => {
+  noteActivity();
   const previousShortcut = config.shortcut;
   config = { ...config, ...newConfig };
   let shortcutError = null;
@@ -1074,6 +1197,7 @@ ipcMain.on('transcription-result', (event, text, elapsedMs) => {
   console.log('[main] transcription-result received, length=', (text || '').length, 'elapsed=', elapsedMs, 'wasCancelled=', wasCancelled, 'userDismissed=', userDismissed);
 
   clearWatchdog();
+  noteActivity();
   if (typeof elapsedMs === 'number') recordPerf(elapsedMs);
 
   // Skip normal processing if this is a test recording from onboarding
@@ -1183,10 +1307,23 @@ ipcMain.on('network-changed', (event, state) => {
   flushNetworkStack(`network ${state}`);
 });
 
+// The recorder announces each transcription attempt with its time budget so
+// the watchdog covers the whole retry chain instead of killing it mid-retry.
+ipcMain.on('transcription-attempt', (event, info) => {
+  const budget = (info && info.budgetMs) || 0;
+  console.log(`[main] transcription attempt ${info && info.attempt}/${info && info.of}, budget=${budget}ms`);
+  if (watchdogTimer) startWatchdog(budget + 5000);
+});
+
+ipcMain.on('flush-network', (event, reason) => {
+  flushNetworkStack(`recorder: ${reason}`);
+});
+
 ipcMain.on('audio-levels', (event, levels) => {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send('audio-levels', levels);
   }
+  handleAudioLevels(levels);
 });
 
 ipcMain.on('close-overlay', () => {
@@ -1365,6 +1502,16 @@ app.whenReady().then(() => {
     }).show();
   }
 
+  // Hygiene timer for the scheduled self-relaunch. Probes quit on their own
+  // schedules, and a relaunched test child must not relaunch again.
+  const suppressRelaunch = process.env.WHISP_UITEST || process.env.LEISE_FOCUS_TEST ||
+    process.env.LEISE_ONBOARD_TEST || process.env.LEISE_AUTOSTOP_TEST ||
+    process.env.LEISE_RETRY_TEST || process.env.LEISE_FRESH ||
+    process.argv.includes('--leise-relaunch-child');
+  if (!suppressRelaunch) {
+    setInterval(maybeSelfRelaunch, RELAUNCH_CHECK_MS);
+  }
+
   // After Mac sleep/wake, the renderer's MediaRecorder + AudioContext can
   // hold onto stale audio device handles or end up in a state where onstop
   // never fires. Recycle the recorder window on resume so the next
@@ -1414,6 +1561,145 @@ if (process.env.LEISE_FOCUS_TEST) {
     const after = app.isActive ? app.isActive() : 'n/a';
     const focused = overlayWindow && overlayWindow.isFocused();
     console.log(`[focus-test] activeBefore=${before} activeAfter=${after} overlayFocused=${focused}`);
+    app.quit();
+  });
+}
+
+// Auto-stop probe (LEISE_AUTOSTOP_TEST=1): drives handleAudioLevels with
+// synthetic frames against the real state machine — no mic, no API keys.
+// Prints one PASS/FAIL line per scenario, then quits.
+if (process.env.LEISE_AUTOSTOP_TEST) {
+  app.whenReady().then(async () => {
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const VOICED = Array.from({ length: 17 }, () => 0.4);
+    const SILENT = Array.from({ length: 17 }, () => 0.03);
+    const feedSilence = async (ms) => {
+      const until = Date.now() + ms;
+      while (Date.now() < until) {
+        handleAudioLevels(SILENT);
+        await tick(50);
+      }
+    };
+    const beginFakeRecording = () => {
+      isRecording = true;
+      wasCancelled = false;
+      userDismissed = false;
+      resetAutoStop();
+    };
+    const results = [];
+
+    await tick(600);
+
+    // Toggle off (the default): speech then silence keeps recording.
+    config.autoStopEnabled = false;
+    beginFakeRecording();
+    for (let i = 0; i < 5; i++) { handleAudioLevels(VOICED); await tick(50); }
+    await feedSilence(2300);
+    results.push(`defaultOff=${isRecording ? 'PASS' : 'FAIL'}`);
+    resetToIdle();
+
+    // Toggle on, transient only: a single voiced frame must not arm.
+    config.autoStopEnabled = true;
+    beginFakeRecording();
+    handleAudioLevels(VOICED);
+    await feedSilence(2300);
+    results.push(`armGuard=${isRecording ? 'PASS' : 'FAIL'}`);
+    resetToIdle();
+
+    // Toggle on, sustained speech then silence: stops on its own.
+    beginFakeRecording();
+    for (let i = 0; i < 5; i++) { handleAudioLevels(VOICED); await tick(50); }
+    await feedSilence(2300);
+    results.push(`autoStop=${!isRecording ? 'PASS' : 'FAIL'}`);
+
+    // Settings toggle: a real click lands in config through save-config.
+    config.autoStopEnabled = false;
+    createSettingsWindow();
+    await tick(1400);
+    await settingsWindow.webContents.executeJavaScript(
+      `document.getElementById('tglAutoStop').click()`);
+    await tick(400);
+    const clickedOn = config.autoStopEnabled === true;
+    await settingsWindow.webContents.executeJavaScript(
+      `document.getElementById('tglAutoStop').click()`);
+    await tick(400);
+    results.push(`settingsToggle=${clickedOn && config.autoStopEnabled === false ? 'PASS' : 'FAIL'}`);
+
+    clearWatchdog();
+    console.log('[autostop-test]', results.join(' '));
+    app.quit();
+  });
+}
+
+// Self-relaunch probe (LEISE_RELAUNCH_TEST=1): shrinks the thresholds, proves
+// the in-flight guard holds, then lets the real app.relaunch() fire. The
+// relaunched child writes an invisibility report (dock, visible windows,
+// activation) into the shared test userData for the runner to read, and quits.
+if (process.env.LEISE_RELAUNCH_TEST) {
+  app.whenReady().then(async () => {
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const reportPath = path.join(app.getPath('userData'), 'relaunch-child-report.json');
+
+    if (process.argv.includes('--leise-relaunch-child')) {
+      await tick(1200);
+      const report = {
+        childPid: process.pid,
+        dockVisible: app.dock ? app.dock.isVisible() : null,
+        visibleWindows: BrowserWindow.getAllWindows().filter((w) => w.isVisible()).length,
+        active: app.isActive ? app.isActive() : null,
+      };
+      fs.writeFileSync(reportPath, JSON.stringify(report));
+      console.log('[relaunch-test] child report written:', JSON.stringify(report));
+      app.quit();
+      return;
+    }
+
+    try { fs.unlinkSync(reportPath); } catch (e) {}
+    // Guard phase: both thresholds exceeded while "recording" — must not fire.
+    isRecording = true;
+    await tick(RELAUNCH_UPTIME_MS + RELAUNCH_IDLE_MS + 1500);
+    console.log('[relaunch-test] guard=PASS (still running while recording past thresholds), parent pid', process.pid);
+    isRecording = false;
+    lastActivityAt = Date.now() - RELAUNCH_IDLE_MS - 100;
+    console.log('[relaunch-test] released — waiting for the hygiene tick to relaunch');
+  });
+}
+
+// Retry-chain probe (LEISE_RETRY_TEST=1): arms the recorder's fault plan so
+// attempt 1 hangs until its own budget aborts it and attempt 2 returns a
+// canned transcript — no mic, no keys, no network. Asserts the retry
+// delivered the result, the watchdog stayed quiet, and the budget curve
+// scales for a 5-minute take.
+if (process.env.LEISE_RETRY_TEST) {
+  app.whenReady().then(async () => {
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    await tick(1200);
+    const FAKE = 'retry test transcript';
+    let attempts = 0;
+    let gotResult = null;
+    let resolveResult;
+    const resultSeen = new Promise((r) => { resolveResult = r; });
+    ipcMain.on('transcription-attempt', () => { attempts += 1; });
+    ipcMain.on('transcription-result', (event, text) => { gotResult = text; resolveResult(); });
+
+    recorderWindow.webContents.send('set-groq-api-key', 'probe-key');
+    recorderWindow.webContents.send('set-transcription-provider', 'groq');
+    recorderWindow.webContents.send('test-transcription-plan', { failFirst: 1, fakeResult: FAKE, budgetOverrideMs: 1200 });
+    await tick(200);
+
+    // Route the result to history, never to a paste on the runner's machine.
+    wasCancelled = true;
+    startWatchdog(transcriptionBudgetMs(0) + 5000);
+    recorderWindow.webContents.executeJavaScript(
+      'transcribeAudio(new Blob([new Uint8Array(1500)]), recordingSessionId, 4000)');
+    await Promise.race([resultSeen, tick(10000)]);
+
+    const chain = gotResult === FAKE;
+    const watchdogQuiet = chain && watchdogTimer === null;
+    const recorderBudget = await recorderWindow.webContents.executeJavaScript('transcriptionBudgetMs(300000)');
+    const budgetOk = recorderBudget === 35000 && transcriptionBudgetMs(300000) === 35000;
+    console.log(`[retry-test] chain=${chain ? 'PASS' : 'FAIL (got ' + JSON.stringify(gotResult) + ')'} attempts=${attempts} watchdog=${watchdogQuiet ? 'quiet' : 'FIRED-or-armed'} budget5min=${budgetOk ? 'PASS' : 'FAIL (' + recorderBudget + ')'}`);
+    clearWatchdog();
     app.quit();
   });
 }

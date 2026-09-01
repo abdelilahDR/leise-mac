@@ -173,6 +173,7 @@
     </div>
     <div class="row"><span>Sounds</span><button type="button" class="toggle" id="tglSounds" aria-label="Sounds"></button></div>
     <div class="row"><span>Paste at cursor</span><button type="button" class="toggle" id="tglPaste" aria-label="Paste at cursor"></button></div>
+    <div class="row"><span>Stop after silence</span><button type="button" class="toggle" id="tglAutoStop" aria-label="Stop after silence"></button></div>
     <div class="row"><span>Microphone</span><span class="ddwrap"><select id="micSelect"><option value="">System default</option></select></span></div>
   </div>
 
@@ -212,6 +213,7 @@
     const keyHelp = document.getElementById('keyHelp');
     const tglSounds = document.getElementById('tglSounds');
     const tglPaste = document.getElementById('tglPaste');
+    const tglAutoStop = document.getElementById('tglAutoStop');
     const micSelect = document.getElementById('micSelect');
     const scChip = document.getElementById('scChip');
     const scHelp = document.getElementById('scHelp');
@@ -294,6 +296,7 @@
     }
     bindToggle(tglSounds, 'soundsEnabled');
     bindToggle(tglPaste, 'autoPasteEnabled');
+    bindToggle(tglAutoStop, 'autoStopEnabled');
 
     async function loadMics() {
       try {
@@ -386,6 +389,7 @@
       provider = config.transcriptionProvider || 'groq';
       tglSounds.classList.toggle('on', config.soundsEnabled !== false);
       tglPaste.classList.toggle('on', config.autoPasteEnabled !== false);
+      tglAutoStop.classList.toggle('on', config.autoStopEnabled === true);
       vocab.value = config.customVocabulary || '';
       if (config.needsAccessibility) {
         document.getElementById('warn').classList.add('visible');

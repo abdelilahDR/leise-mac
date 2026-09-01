@@ -171,7 +171,8 @@
           audioContext: audioContext,
           audioChunks: audioChunks,
           levelInterval: null,
-          cancelled: false
+          cancelled: false,
+          startedAt: Date.now()
         };
 
         // Level monitoring (send to main for waveform)
@@ -231,16 +232,17 @@
 
           // Capture chunks immediately (before any async work)
           const chunksToProcess = [...audioChunks];
+          const durationMs = Date.now() - (currentRecording.startedAt || Date.now());
 
           // Stop stream tracks (this recording's stream only)
           stream.getTracks().forEach(track => track.stop());
 
           // Create blob from this session's chunks only
           const audioBlob = new Blob(chunksToProcess, { type: 'audio/webm' });
-          console.log('Created audio blob, size:', audioBlob.size, 'chunks:', chunksToProcess.length, 'session:', mySessionId);
+          console.log('Created audio blob, size:', audioBlob.size, 'chunks:', chunksToProcess.length, 'session:', mySessionId, 'duration:', durationMs);
 
           // Transcribe
-          await transcribeAudio(audioBlob, mySessionId);
+          await transcribeAudio(audioBlob, mySessionId, durationMs);
         };
 
         // Start recording with 100ms timeslice
@@ -366,17 +368,79 @@
     // ============================================
     // Transcription
     // ============================================
-    async function transcribeAudio(audioBlob, sessionId) {
-      console.log('Starting transcription, blob size:', audioBlob.size, 'session:', sessionId);
+    // Per-attempt time budget scales with the recording: a 5-minute take is a
+    // bigger upload and must not be cut by a fixed short timeout. Mirrors
+    // transcriptionBudgetMs in main.js — main arms its watchdog from the same
+    // curve.
+    function transcriptionBudgetMs(durationMs) {
+      return Math.min(45000, 10000 + Math.round((durationMs || 0) / 12));
+    }
+
+    // Fault injection for LEISE_RETRY_TEST: main sends a plan and the fetch
+    // is simulated — first N attempts hang until the budget timer aborts
+    // them, later attempts return a canned transcript.
+    let testPlan = null;
+    window.electronAPI.onTestTranscriptionPlan((plan) => {
+      testPlan = { ...plan, calls: 0 };
+      console.log('[retry-test] plan armed:', JSON.stringify(plan));
+    });
+
+    async function callTranscriptionAPI(audioBlob, provider, key, ctrl) {
+      const isGroq = provider === 'groq';
+      if (testPlan) {
+        const n = ++testPlan.calls;
+        console.log(`[retry-test] simulated fetch ${n} (${provider})`);
+        if (n <= testPlan.failFirst) {
+          await new Promise((_, reject) => {
+            const bail = () => reject(new DOMException('Aborted', 'AbortError'));
+            if (ctrl.signal.aborted) return bail();
+            ctrl.signal.addEventListener('abort', bail);
+          });
+        }
+        return { response: { ok: true, status: 200, text: async () => testPlan.fakeResult }, provider: isGroq ? 'Groq' : 'OpenAI', elapsedMs: 5 };
+      }
+      const formData = new FormData();
+      const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
+      formData.append('file', audioFile);
+      formData.append('model', isGroq ? 'whisper-large-v3-turbo' : 'whisper-1');
+      // Spelling hints: Whisper biases toward terms in the prompt. Capped
+      // well under the 224-token prompt limit.
+      if (customVocabulary) {
+        formData.append('prompt', customVocabulary.slice(0, 700));
+      }
+      formData.append('response_format', 'text');
+      // Force English decoding so the model can't drift into multilingual
+      // word-salad hallucinations on silence ("Конечно dépend Church of...").
+      formData.append('language', 'en');
+      // Deterministic decoding — suppresses low-probability tokens that
+      // hallucinations are typically sampled from.
+      formData.append('temperature', '0');
+
+      const endpoint = isGroq
+        ? 'https://api.groq.com/openai/v1/audio/transcriptions'
+        : 'https://api.openai.com/v1/audio/transcriptions';
+
+      console.log(`fetch START ${isGroq ? 'Groq' : 'OpenAI'} endpoint=${endpoint} blob=${audioBlob.size} key.len=${(key || '').length}`);
+      const fetchStart = Date.now();
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${key}` },
+        body: formData,
+        signal: ctrl.signal
+      });
+      const elapsedMs = Date.now() - fetchStart;
+      console.log(`fetch DONE status=${response.status} elapsed=${elapsedMs}ms`);
+      return { response, provider: isGroq ? 'Groq' : 'OpenAI', elapsedMs };
+    }
+
+    async function transcribeAudio(audioBlob, sessionId, durationMs) {
+      console.log('Starting transcription, blob size:', audioBlob.size, 'session:', sessionId, 'duration:', durationMs);
       console.log('Provider:', transcriptionProvider);
 
       const useGroq = transcriptionProvider === 'groq';
       const primaryKey = useGroq ? groqApiKey : apiKey;
       const fallbackKey = useGroq ? apiKey : groqApiKey;
       const hasFallback = !!fallbackKey;
-
-      console.log('API key available:', primaryKey ? 'YES' : 'NO');
-      console.log('Fallback available:', hasFallback ? 'YES' : 'NO');
 
       // Validate API key
       if (!primaryKey) {
@@ -396,123 +460,107 @@
         return;
       }
 
-      // Create abort controller for this transcription
-      currentAbortController = new AbortController();
-      const abortController = currentAbortController;
+      // Attempt chain: primary, primary again after a network flush, then the
+      // fallback provider if a second key exists. The audio blob stays in
+      // memory for the whole chain, so a timeout never costs the take. Main is
+      // told before each attempt and re-arms its watchdog from the same budget.
+      const primary = useGroq ? 'groq' : 'openai';
+      const fallback = useGroq ? 'openai' : 'groq';
+      const attempts = [
+        { provider: primary, key: primaryKey },
+        { provider: primary, key: primaryKey, flush: true },
+      ];
+      if (hasFallback) attempts.push({ provider: fallback, key: fallbackKey, flush: true });
 
-      // Helper to call API
-      async function callTranscriptionAPI(provider, key) {
-        const isGroq = provider === 'groq';
-        const formData = new FormData();
-        const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
-        formData.append('file', audioFile);
-        formData.append('model', isGroq ? 'whisper-large-v3-turbo' : 'whisper-1');
-        // Spelling hints: Whisper biases toward terms in the prompt. Capped
-        // well under the 224-token prompt limit.
-        if (customVocabulary) {
-          formData.append('prompt', customVocabulary.slice(0, 700));
-        }
-        formData.append('response_format', 'text');
-        // Force English decoding so the model can't drift into multilingual
-        // word-salad hallucinations on silence ("Конечно dépend Church of...").
-        formData.append('language', 'en');
-        // Deterministic decoding — suppresses low-probability tokens that
-        // hallucinations are typically sampled from.
-        formData.append('temperature', '0');
+      const budgetMs = (testPlan && testPlan.budgetOverrideMs) || transcriptionBudgetMs(durationMs);
+      let lastError = null;
 
-        const endpoint = isGroq
-          ? 'https://api.groq.com/openai/v1/audio/transcriptions'
-          : 'https://api.openai.com/v1/audio/transcriptions';
-
-        const TIMEOUT_MS = 10000; // 10s — short clips should return in 1-3s; anything longer is a hang
-        console.log(`fetch START ${isGroq ? 'Groq' : 'OpenAI'} endpoint=${endpoint} blob=${audioBlob.size} timeout=${TIMEOUT_MS}ms key.len=${(key || '').length}`);
-
-        const timeoutId = setTimeout(() => {
-          console.warn(`fetch TIMEOUT after ${TIMEOUT_MS}ms — aborting`);
-          abortController.abort();
-        }, TIMEOUT_MS);
-
-        const fetchStart = Date.now();
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${key}` },
-          body: formData,
-          signal: abortController.signal
-        });
-
-        clearTimeout(timeoutId);
-        const elapsedMs = Date.now() - fetchStart;
-        console.log(`fetch DONE status=${response.status} elapsed=${elapsedMs}ms`);
-
-        return { response, provider: isGroq ? 'Groq' : 'OpenAI', elapsedMs };
-      }
-
-      try {
-        // Try primary provider
-        const primaryProvider = useGroq ? 'groq' : 'openai';
-        let { response, provider, elapsedMs } = await callTranscriptionAPI(primaryProvider, primaryKey);
-
-        // Fallback on rate limit or server error
-        if (!response.ok && hasFallback && (response.status === 429 || response.status >= 500)) {
-          console.log(`${provider} failed with ${response.status}, falling back...`);
-          const fallbackProvider = useGroq ? 'openai' : 'groq';
-          const fallbackResult = await callTranscriptionAPI(fallbackProvider, fallbackKey);
-          response = fallbackResult.response;
-          provider = fallbackResult.provider;
-          elapsedMs = fallbackResult.elapsedMs;
+      for (let i = 0; i < attempts.length; i++) {
+        if (sessionId !== recordingSessionId) return;
+        const a = attempts[i];
+        window.electronAPI.notifyTranscriptionAttempt({ attempt: i + 1, of: attempts.length, budgetMs });
+        if (a.flush) {
+          // Stale sockets are the usual reason the first attempt hung; drop
+          // them before going again.
+          window.electronAPI.flushNetwork(`retry attempt ${i + 1}`);
+          await new Promise((r) => setTimeout(r, 300));
         }
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorMessage = `API error: ${response.status}`;
+        const ctrl = new AbortController();
+        currentAbortController = ctrl;
+        let selfTimeout = false;
+        const timer = setTimeout(() => {
+          console.warn(`attempt ${i + 1} TIMEOUT after ${budgetMs}ms — aborting`);
+          selfTimeout = true;
+          ctrl.abort();
+        }, budgetMs);
 
-          try {
-            const errorJson = JSON.parse(errorText);
-            if (errorJson.error?.message) {
-              errorMessage = errorJson.error.message;
+        try {
+          const { response, provider, elapsedMs } = await callTranscriptionAPI(audioBlob, a.provider, a.key, ctrl);
+          clearTimeout(timer);
+
+          if (!response.ok) {
+            // Rate limit or server error can pass on the next attempt; a bad
+            // key or bad request cannot.
+            if (response.status === 429 || response.status >= 500) {
+              lastError = new Error(`${provider} error ${response.status}`);
+              console.warn(`attempt ${i + 1}: ${lastError.message}`);
+              continue;
             }
-          } catch (e) {
-            errorMessage = errorText || errorMessage;
+            const errorText = await response.text();
+            let errorMessage = `API error: ${response.status}`;
+            try {
+              const errorJson = JSON.parse(errorText);
+              if (errorJson.error?.message) errorMessage = errorJson.error.message;
+            } catch (e) {
+              errorMessage = errorText || errorMessage;
+            }
+            throw new Error(errorMessage);
           }
 
-          throw new Error(errorMessage);
-        }
+          const rawText = (await response.text()).trim();
+          const cleanedText = cleanHallucinations(rawText);
+          if (cleanedText !== rawText) {
+            console.log(`hallucination cleaned: ${rawText.length} -> ${cleanedText.length} chars`);
+          }
+          console.log(`Transcription result (via ${provider}, attempt ${i + 1}):`, cleanedText);
 
-        const rawText = (await response.text()).trim();
-        const cleanedText = cleanHallucinations(rawText);
-        if (cleanedText !== rawText) {
-          console.log(`hallucination cleaned: ${rawText.length} -> ${cleanedText.length} chars`);
-        }
-        console.log(`Transcription result (via ${provider}):`, cleanedText);
-
-        // Only send if still current session
-        if (sessionId === recordingSessionId) {
-          window.electronAPI.sendTranscriptionResult(cleanedText, elapsedMs);
-        } else {
-          console.log('Ignoring stale result from session', sessionId);
-        }
-
-      } catch (error) {
-        // Ignore aborted requests from old sessions
-        if (error.name === 'AbortError' && sessionId !== recordingSessionId) {
-          console.log('Ignoring aborted request from old session', sessionId);
+          if (sessionId === recordingSessionId) {
+            window.electronAPI.sendTranscriptionResult(cleanedText, elapsedMs);
+          } else {
+            console.log('Ignoring stale result from session', sessionId);
+          }
           return;
-        }
 
-        console.error('Transcription failed:', error);
-
-        let message = error.message;
-        if (error.name === 'AbortError') {
-          message = 'Timed out. Try again, or restart Leise.';
-        }
-
-        // Only send error if still current session
-        if (sessionId === recordingSessionId) {
-          window.electronAPI.sendTranscriptionError(message);
-        } else {
-          console.log('Ignoring stale error from session', sessionId);
+        } catch (error) {
+          clearTimeout(timer);
+          if (sessionId !== recordingSessionId) {
+            console.log('Ignoring failure from old session', sessionId);
+            return;
+          }
+          // An abort that this attempt's own timer did not fire came from
+          // outside (watchdog or a new recording) — stop the chain quietly.
+          if (error.name === 'AbortError' && !selfTimeout) {
+            console.log('Externally aborted, stopping retry chain');
+            return;
+          }
+          lastError = error;
+          const retryable = selfTimeout || error instanceof TypeError;
+          if (retryable && i + 1 < attempts.length) {
+            console.warn(`attempt ${i + 1} failed (${selfTimeout ? 'timeout' : error.message}), retrying`);
+            continue;
+          }
+          break;
         }
       }
+
+      if (sessionId !== recordingSessionId) return;
+      console.error('Transcription failed after all attempts:', lastError && lastError.message);
+      let message = lastError ? lastError.message : 'Transcription failed';
+      if (lastError && lastError.name === 'AbortError') {
+        message = `Timed out. Try again, or restart ${window.electronAPI.productName}.`;
+      }
+      window.electronAPI.sendTranscriptionError(message);
     }
 
     // ============================================
