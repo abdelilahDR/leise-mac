@@ -11,7 +11,7 @@
       background: var(--ground);
       color: var(--ink);
       font-size: 13px;
-      padding: 40px 22px 18px;
+      padding: var(--space-40) var(--space-20) var(--space-20);
       overflow: hidden;
       -webkit-font-smoothing: antialiased;
       height: 100vh;
@@ -29,7 +29,7 @@
 
     .hero-mark {
       width: 68px; height: 68px; border-radius: 50%;
-      margin: 26px auto 18px;
+      margin: var(--space-24) auto var(--space-16);
       display: flex; align-items: center; justify-content: center;
       background: rgba(0, 122, 255, 0.1);
       color: var(--blue);
@@ -45,7 +45,7 @@
     }
     .row {
       display: flex; align-items: center; justify-content: space-between;
-      gap: 12px; min-height: 44px; padding: 6px 14px;
+      gap: var(--space-12); min-height: 44px; padding: var(--space-8) var(--space-12);
     }
     .row + .row { border-top: 0.5px solid var(--row-sep); }
     .row .nm { font-weight: 500; }
@@ -56,25 +56,25 @@
       background: var(--blue); color: #fff;
       border: none; border-radius: 6px;
       font-family: inherit; font-size: 12px; font-weight: 500;
-      padding: 5px 12px; cursor: pointer;
+      padding: var(--space-4) var(--space-12); cursor: pointer;
     }
     .btn:disabled { opacity: 0.4; cursor: default; }
     .btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
     .btn-wide {
-      display: block; width: 100%; padding: 10px 0; margin-top: auto;
+      display: block; width: 100%; padding: var(--space-8) 0; margin-top: auto;
       font-size: 13px; border-radius: 8px;
     }
     .btn-ghost { background: transparent; color: var(--blue); }
 
     .seg { display: flex; border-radius: 7px; padding: 2px; background: var(--seg-track); font-size: 12px; margin-bottom: 8px; }
     .seg button {
-      flex: 1; text-align: center; padding: 5px 0; border-radius: 5px;
+      flex: 1; text-align: center; padding: var(--space-4) 0; border-radius: 5px;
       font-weight: 500; opacity: 0.65; border: none; background: transparent;
       color: inherit; font-family: inherit; font-size: inherit; cursor: pointer;
     }
     .seg button.on { opacity: 1; background: var(--seg-thumb); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); }
 
-    .keyrow { display: flex; align-items: center; gap: 8px; padding: 10px 14px; }
+    .keyrow { display: flex; align-items: center; gap: var(--space-8); padding: var(--space-8) var(--space-12); }
     .keyinput {
       border: none; background: transparent; outline: none;
       color: var(--ink); font-family: var(--mono); font-size: 12px;
@@ -89,7 +89,7 @@
     .help a { color: var(--blue); text-decoration: none; cursor: pointer; }
 
     kbd {
-      font-family: var(--mono); font-size: 11px; border-radius: 4px; padding: 1px 6px;
+      font-family: var(--mono); font-size: 11px; border-radius: 4px; padding: var(--space-2) var(--space-6);
       background: rgba(127, 127, 127, 0.18);
     }
 
@@ -98,11 +98,11 @@
       background: var(--surface); color: var(--ink);
       border: 0.5px solid var(--hairline); border-radius: var(--radius-group);
       font-family: inherit; font-size: 13px; line-height: 1.5;
-      padding: 12px 14px; outline: none;
+      padding: var(--space-12) var(--space-16); outline: none;
     }
     textarea:focus { border-color: var(--blue); }
 
-    .dots { display: flex; gap: 5px; justify-content: center; padding: 14px 0 2px; }
+    .dots { display: flex; gap: var(--space-4); justify-content: center; padding: var(--space-16) 0 var(--space-2); }
     .dots i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.18; }
     .dots i.on { opacity: 0.75; }
 

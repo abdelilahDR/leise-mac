@@ -11,7 +11,7 @@
       background: var(--ground);
       color: var(--ink);
       font-size: 13px;
-      padding: 16px 18px 18px;
+      padding: var(--space-16) var(--space-20) var(--space-20);
       padding-top: 40px;
       overflow: hidden;
       -webkit-font-smoothing: antialiased;
@@ -33,9 +33,9 @@
       background: rgba(255, 149, 0, 0.12);
       border: 0.5px solid rgba(255, 149, 0, 0.3);
       color: var(--ink);
-      padding: 10px 14px;
+      padding: var(--space-8) var(--space-16);
       font-size: 12px;
-      margin-bottom: 4px;
+      margin-bottom: var(--space-4);
     }
     .warn.visible { display: block; }
     .warn b { color: var(--orange); font-weight: 600; }
@@ -43,7 +43,7 @@
     .section-label {
       font-size: 11px; font-weight: 500; text-transform: uppercase;
       letter-spacing: 0.05em; color: var(--secondary);
-      margin: 16px 10px 6px;
+      margin: var(--space-16) var(--space-8) var(--space-6);
     }
     .group {
       background: var(--surface);
@@ -53,24 +53,24 @@
     }
     .row {
       display: flex; align-items: center; justify-content: space-between;
-      gap: 12px; min-height: 42px; padding: 6px 14px;
+      gap: var(--space-12); min-height: 42px; padding: var(--space-6) var(--space-16);
     }
     .row + .row { border-top: 0.5px solid var(--row-sep); }
-    .help { font-size: 11.5px; color: var(--secondary); margin: 6px 12px 0; }
+    .help { font-size: 11.5px; color: var(--secondary); margin: var(--space-6) var(--space-12) 0; }
     .help a { color: var(--blue); text-decoration: none; cursor: pointer; }
     .help a:hover { text-decoration: underline; }
     .help .err { color: var(--red); }
 
     .seg { display: flex; border-radius: 7px; padding: 2px; width: 158px; background: var(--seg-track); font-size: 12px; }
     .seg button {
-      flex: 1; text-align: center; padding: 3px 0; border-radius: 5px;
+      flex: 1; text-align: center; padding: var(--space-4) 0; border-radius: 5px;
       font-weight: 500; opacity: 0.65; border: none; background: transparent;
       color: inherit; font-family: inherit; font-size: inherit; cursor: pointer;
     }
     .seg button.on { opacity: 1; background: var(--seg-thumb); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); }
     .seg button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 
-    .keywrap { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end; }
+    .keywrap { display: flex; align-items: center; gap: var(--space-8); flex: 1; justify-content: flex-end; }
     .keyinput {
       border: none; background: transparent; outline: none;
       color: var(--ink); font-family: var(--mono); font-size: 12px;
@@ -103,7 +103,7 @@
       background: var(--control-bg); color: var(--ink);
       border: none; border-radius: var(--radius-control);
       font-family: inherit; font-size: 12px;
-      padding: 4px 22px 4px 10px; cursor: pointer;
+      padding: var(--space-4) 22px var(--space-4) var(--space-8); cursor: pointer;
       max-width: 180px; text-overflow: ellipsis;
     }
     .ddwrap { position: relative; display: inline-flex; align-items: center; }
@@ -114,13 +114,13 @@
 
     .sc-chip {
       font-family: var(--mono); font-size: 12px; border-radius: 6px;
-      padding: 3px 10px; border: 0.5px solid rgba(127, 127, 127, 0.5);
+      padding: var(--space-4) var(--space-8); border: 0.5px solid rgba(127, 127, 127, 0.5);
       background: transparent; color: inherit; cursor: pointer;
     }
     .sc-chip.arming { border-color: var(--blue); color: var(--blue); }
     .sc-chip:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
-    .foot { font-size: 11px; color: var(--secondary); opacity: 0.75; margin-top: 14px; text-align: center; }
+    .foot { font-size: 11px; color: var(--secondary); opacity: 0.75; margin-top: var(--space-16); text-align: center; }
   </style>
 </head>
 <body>

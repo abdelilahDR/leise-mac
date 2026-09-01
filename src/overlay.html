@@ -16,7 +16,7 @@
       display: flex;
       align-items: flex-end;
       justify-content: center;
-      padding-bottom: 26px;
+      padding-bottom: var(--space-24);
     }
 
     /* Stage handles arrival and the success drop. */
@@ -63,7 +63,7 @@
       100% { transform: translateY(0); }
     }
 
-    .body { display: flex; align-items: center; gap: 10px; white-space: nowrap; transition: opacity 150ms ease; }
+    .body { display: flex; align-items: center; gap: var(--space-8); white-space: nowrap; transition: opacity 150ms ease; }
     .stage.ok .body { opacity: 0; }
 
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); flex-shrink: 0; transition: background-color 250ms ease; }
@@ -101,9 +101,9 @@
     .msg {
       display: none;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-8);
       height: 38px;
-      padding: 0 15px;
+      padding: 0 var(--space-16);
       border-radius: 19px;
       background: var(--glass-bg);
       border: 1px solid var(--glass-border);
@@ -120,7 +120,7 @@
     .msg .mdot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
     .msg.neutral .mdot { background: var(--secondary); }
     .msg kbd {
-      font-size: 10px; font-family: inherit; border-radius: 3px; padding: 1px 5px;
+      font-size: 10px; font-family: inherit; border-radius: 3px; padding: var(--space-2) var(--space-6);
       background: rgba(127, 127, 127, 0.18);
       -webkit-app-region: no-drag;
     }
