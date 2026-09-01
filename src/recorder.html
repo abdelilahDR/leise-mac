@@ -21,6 +21,7 @@
     let apiKey = '';
     let groqApiKey = '';
     let transcriptionProvider = 'openai';
+    let customVocabulary = '';
     let recordingSessionId = 0;
     let currentAbortController = null;
 
@@ -116,6 +117,7 @@
           if (cfg && cfg.preferredInputDeviceId) {
             audioConstraints.deviceId = { exact: cfg.preferredInputDeviceId };
           }
+          customVocabulary = ((cfg && cfg.customVocabulary) || '').trim();
         } catch (e) { /* fall through to default device */ }
 
         let stream;
@@ -405,6 +407,11 @@
         const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
         formData.append('file', audioFile);
         formData.append('model', isGroq ? 'whisper-large-v3-turbo' : 'whisper-1');
+        // Spelling hints: Whisper biases toward terms in the prompt. Capped
+        // well under the 224-token prompt limit.
+        if (customVocabulary) {
+          formData.append('prompt', customVocabulary.slice(0, 700));
+        }
         formData.append('response_format', 'text');
         // Force English decoding so the model can't drift into multilingual
         // word-salad hallucinations on silence ("Конечно dépend Church of...").

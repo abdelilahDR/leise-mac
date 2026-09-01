@@ -1,7 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 // Expose protected methods for renderer processes
+// Sandboxed preloads cannot require local modules; the name comes from main.
 contextBridge.exposeInMainWorld('electronAPI', {
+  productName: ipcRenderer.sendSync('get-product-name'),
   // Settings
   getConfig: () => ipcRenderer.invoke('get-config'),
   saveConfig: (config) => ipcRenderer.invoke('save-config', config),

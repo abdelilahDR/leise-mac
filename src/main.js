@@ -17,6 +17,7 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { PRODUCT_NAME } = require('./product');
 const { exec } = require('child_process');
 
 // ============================================
@@ -24,7 +25,7 @@ const { exec } = require('child_process');
 // wrong directory or the installed app is intercepting things.
 // ============================================
 console.log('═══════════════════════════════════════════════');
-console.log('  Whisp DEV — diagnostic build  ' + new Date().toISOString());
+console.log(`  ${PRODUCT_NAME} DEV — diagnostic build  ` + new Date().toISOString());
 console.log('  cwd:', process.cwd());
 console.log('  __dirname:', __dirname);
 console.log('═══════════════════════════════════════════════');
@@ -52,6 +53,36 @@ const configPath = path.join(app.getPath('userData'), 'config.json');
 const historyPath = path.join(app.getPath('userData'), 'history.json');
 const HISTORY_MAX = 20;
 
+// API keys are encrypted at rest via Electron safeStorage (macOS Keychain
+// holds the encryption key). In memory config keeps plaintext for use; on
+// disk only apiKeyEnc/groqApiKeyEnc appear. Plaintext keys from older
+// versions migrate to encrypted on the first save.
+const KEY_FIELDS = ['apiKey', 'groqApiKey'];
+
+function encryptKey(value) {
+  const { safeStorage } = require('electron');
+  if (!value) return '';
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      return safeStorage.encryptString(value).toString('base64');
+    }
+  } catch (err) {
+    console.error('encryptKey failed:', err);
+  }
+  return null; // encryption unavailable — caller keeps plaintext
+}
+
+function decryptKey(enc) {
+  const { safeStorage } = require('electron');
+  if (!enc) return '';
+  try {
+    return safeStorage.decryptString(Buffer.from(enc, 'base64'));
+  } catch (err) {
+    console.error('decryptKey failed:', err);
+    return '';
+  }
+}
+
 const CONFIG_DEFAULTS = {
   apiKey: '',
   groqApiKey: '',
@@ -61,6 +92,7 @@ const CONFIG_DEFAULTS = {
   autoPasteEnabled: true,
   preferredInputDeviceId: '',
   appearance: 'system', // system | light | dark, drives nativeTheme.themeSource
+  customVocabulary: '', // names and jargon, passed to Whisper as a spelling hint
 };
 
 function applyAppearance() {
@@ -72,6 +104,8 @@ function loadConfig() {
   try {
     if (fs.existsSync(configPath)) {
       const data = fs.readFileSync(configPath, 'utf8');
+      // Enc fields stay raw here: safeStorage only works after app ready,
+      // and this runs at module load. hydrateKeys() decrypts them.
       return { ...CONFIG_DEFAULTS, ...JSON.parse(data) };
     }
   } catch (err) {
@@ -92,7 +126,15 @@ function saveConfig(newConfig) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2));
+    const onDisk = { ...newConfig };
+    for (const field of KEY_FIELDS) {
+      const enc = encryptKey(onDisk[field]);
+      if (enc !== null) {
+        if (enc) onDisk[field + 'Enc'] = enc;
+        delete onDisk[field];
+      }
+    }
+    fs.writeFileSync(configPath, JSON.stringify(onDisk, null, 2));
     return true;
   } catch (err) {
     console.error('Failed to save config:', err);
@@ -146,6 +188,19 @@ function clearHistory() {
 }
 
 let config = loadConfig();
+
+// Runs once app is ready (safeStorage needs that): decrypt stored keys into
+// memory, and if the file still holds plaintext keys, re-save to migrate.
+function hydrateKeys() {
+  let hadPlaintext = false;
+  for (const field of KEY_FIELDS) {
+    if (config[field]) hadPlaintext = true;
+    const enc = config[field + 'Enc'];
+    if (enc && !config[field]) config[field] = decryptKey(enc);
+    delete config[field + 'Enc'];
+  }
+  if (hadPlaintext && (config.apiKey || config.groqApiKey)) saveConfig(config);
+}
 
 // ============================================
 // Global State
@@ -270,7 +325,7 @@ function startWatchdog() {
     userDismissed = false;
     resetToIdle();
     if (wasUserVisible) {
-      showOverlay('error', { error: 'Timed out. Try again, or restart Whisp.' });
+      showOverlay('error', { error: `Timed out. Try again, or restart ${PRODUCT_NAME}.` });
       scheduleOverlayHide(2500);
     } else {
       hideOverlay();
@@ -468,7 +523,7 @@ function createSettingsWindow() {
 
   settingsWindow = new BrowserWindow({
     width: 400,
-    height: 545,
+    height: 660,
     center: true,
     resizable: false,
     minimizable: false,
@@ -557,7 +612,7 @@ function createTray() {
     const icon = createTrayIcon('idle');
     tray = new Tray(icon);
     updateTrayMenu();
-    tray.setToolTip('Whisp');
+    tray.setToolTip(PRODUCT_NAME);
   } catch (err) {
     console.error('Failed to create tray:', err);
   }
@@ -607,7 +662,7 @@ function copyHistoryEntry(id) {
   if (!entry) return;
   clipboard.writeText(entry.text);
   new Notification({
-    title: 'Whisp',
+    title: PRODUCT_NAME,
     body: 'Copied to clipboard',
   }).show();
 }
@@ -697,7 +752,7 @@ function startRecording() {
   if (!hasActiveKey()) {
     createSettingsWindow();
     new Notification({
-      title: 'Whisp',
+      title: PRODUCT_NAME,
       body: 'Add your API key in Settings first.',
     }).show();
     return;
@@ -892,6 +947,10 @@ ipcMain.handle('open-external', (event, url) => {
 
 ipcMain.on('open-settings', () => {
   createSettingsWindow();
+});
+
+ipcMain.on('get-product-name', (event) => {
+  event.returnValue = PRODUCT_NAME;
 });
 
 ipcMain.handle('test-api-key', async (event, apiKey) => {
@@ -1199,6 +1258,7 @@ app.whenReady().then(() => {
   systemPreferences.isTrustedAccessibilityClient(true);
 
   applyAppearance();
+  hydrateKeys();
   createRecorderWindow();
   createTray();
 
@@ -1218,7 +1278,7 @@ app.whenReady().then(() => {
   if (!registered) {
     console.error('Failed to register shortcut:', shortcut);
     new Notification({
-      title: 'Whisp',
+      title: PRODUCT_NAME,
       body: `Failed to register ${shortcut}. It may be used by another app.`,
     }).show();
   }
