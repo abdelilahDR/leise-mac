@@ -129,6 +129,11 @@
     textarea.vocab::placeholder { color: var(--secondary); opacity: 0.7; }
 
     .foot { font-size: 11px; color: var(--secondary); opacity: 0.75; margin-top: var(--space-16); text-align: center; }
+    #vocabSaved {
+      font-size: 10px; letter-spacing: 0.04em; color: var(--green);
+      opacity: 0; transition: opacity 250ms ease; margin-left: var(--space-4);
+    }
+    #vocabSaved.show { opacity: 1; }
   </style>
 </head>
 <body>
@@ -178,18 +183,22 @@
       <button type="button" class="sc-chip" id="scChip">⌃ Space</button>
     </div>
   </div>
-  <p class="help" id="scHelp">Click the shortcut, then press the new keys. Esc keeps the current one.</p>
+  <p class="help" id="scHelp">Click, then press the new keys.</p>
 
-  <p class="section-label">Dictionary</p>
+  <p class="section-label">Dictionary <span id="vocabSaved">Saved</span></p>
   <div class="group">
     <textarea class="vocab" id="vocab" spellcheck="false" placeholder="Names and jargon, one per line or comma-separated. Leise uses them as spelling hints."></textarea>
   </div>
-  <p class="help">Helps with names, brands, and technical words.</p>
 
   <div class="foot">Changes apply instantly</div>
 
   <script>
     const api = window.electronAPI;
+    function reportHeight() {
+      const foot = document.querySelector('.foot');
+      const h = foot.offsetTop + foot.offsetHeight + 20;
+      api.reportHeight(h);
+    }
     let config = {};
     let provider = 'groq';
     let keyDebounce = null;
@@ -316,7 +325,7 @@
     function renderShortcut() {
       scChip.textContent = displayShortcut(config.shortcut);
       scChip.classList.remove('arming');
-      scHelp.innerHTML = 'Click the shortcut, then press the new keys. Esc keeps the current one.';
+      scHelp.innerHTML = 'Click, then press the new keys.';
       armed = false;
     }
     scChip.addEventListener('click', () => {
@@ -363,7 +372,12 @@
     let vocabDebounce = null;
     vocab.addEventListener('input', () => {
       if (vocabDebounce) clearTimeout(vocabDebounce);
-      vocabDebounce = setTimeout(() => save({ customVocabulary: vocab.value }), 600);
+      vocabDebounce = setTimeout(async () => {
+        await save({ customVocabulary: vocab.value });
+        const chip = document.getElementById('vocabSaved');
+        chip.classList.add('show');
+        setTimeout(() => chip.classList.remove('show'), 1400);
+      }, 600);
     });
 
     // Init
@@ -373,11 +387,26 @@
       tglSounds.classList.toggle('on', config.soundsEnabled !== false);
       tglPaste.classList.toggle('on', config.autoPasteEnabled !== false);
       vocab.value = config.customVocabulary || '';
-      if (config.needsAccessibility) document.getElementById('warn').classList.add('visible');
+      if (config.needsAccessibility) {
+        document.getElementById('warn').classList.add('visible');
+        // The user grants in System Settings and comes back — notice it.
+        const poll = setInterval(async () => {
+          try {
+            const r = await api.checkAccessibility();
+            if (r.granted) {
+              clearInterval(poll);
+              document.getElementById('warn').classList.remove('visible');
+              reportHeight();
+            }
+          } catch (e) {}
+        }, 2000);
+      }
       renderProvider();
       renderAppearance();
       renderShortcut();
       loadMics();
+      reportHeight();
+      setTimeout(reportHeight, 250);
     });
   </script>
 </body>

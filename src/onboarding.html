@@ -165,7 +165,7 @@
   <!-- 4 · Try it -->
   <div class="screen" id="s-try">
     <h1>Try it</h1>
-    <p class="sub">Click into the box, press <kbd id="tryKbd">⌃ Space</kbd>, and say something. Press it again to stop.</p>
+    <p class="sub">Click into the box, press <kbd id="tryKbd">⌃ Space</kbd>, and say something. Stop with the same keys, or <kbd>Enter</kbd>.</p>
     <textarea id="tryBox" placeholder="Your words land here, and later wherever your cursor is."></textarea>
     <p class="help" style="margin-top:6px">That is the whole app.</p>
     <button class="btn btn-wide" id="btnDone">Get Started</button>
@@ -176,17 +176,23 @@
   <div class="screen" id="s-guide">
     <div class="g-title"><h1>Guide</h1><span class="g-open-settings" id="openSettings">Settings…</span></div>
     <p class="sub" id="guideSub">Everything Leise answers to.</p>
-    <div class="group">
+    <div class="group" id="guideGroup">
       <div class="row"><span class="nm">Record</span><kbd id="gKbd">⌃ Space</kbd></div>
-      <div class="row"><span class="nm">Stop</span><kbd>⏎</kbd></div>
+      <div class="row"><span class="nm">Stop</span><kbd>Enter</kbd></div>
       <div class="row"><span class="nm">Cancel, keep in history</span><kbd>esc</kbd></div>
       <div class="row"><span class="nm">Recent transcriptions</span><span class="state-wait">Menubar menu</span></div>
       <div class="row"><span class="nm">Provider</span><span class="state-wait" id="gProvider">–</span></div>
     </div>
+    <p class="help" style="margin-top:6px">Change the shortcut anytime in Settings.</p>
   </div>
 
   <script>
     const api = window.electronAPI;
+    function reportHeight() {
+      const s = document.querySelector('.screen.visible');
+      if (!s) return;
+      api.reportHeight(s.scrollHeight + 56);
+    }
     let config = {};
     let provider = 'groq';
     let keyDebounce = null;
@@ -197,6 +203,7 @@
     function show(id) {
       screens.forEach((s) => document.getElementById(s).classList.toggle('visible', s === id));
       if (id !== 's-perms' && permPoll) { clearInterval(permPoll); permPoll = null; }
+      requestAnimationFrame(() => { reportHeight(); setTimeout(reportHeight, 200); });
     }
 
     const KEY_GLYPHS = { Control: '⌃', Alt: '⌥', Shift: '⇧', Meta: '⌘', Command: '⌘', CommandOrControl: '⌘' };

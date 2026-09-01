@@ -51,4 +51,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Links + window hops
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   openSettingsWindow: () => ipcRenderer.send('open-settings'),
+  reportHeight: (height) => ipcRenderer.send('content-height', height),
 });

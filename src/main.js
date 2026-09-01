@@ -989,6 +989,15 @@ ipcMain.on('open-settings', () => {
   createSettingsWindow();
 });
 
+// Windows report their content height and get resized to fit — settings and
+// onboarding shrink and grow with their content instead of clipping it.
+ipcMain.on('content-height', (event, height) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed() || win === overlayWindow || win === recorderWindow) return;
+  const clamped = Math.max(320, Math.min(Math.round(height), 860));
+  win.setContentSize(400, clamped, true);
+});
+
 ipcMain.on('get-product-name', (event) => {
   event.returnValue = PRODUCT_NAME;
 });
