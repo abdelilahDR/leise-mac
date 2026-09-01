@@ -63,15 +63,27 @@
       100% { transform: translateY(0); }
     }
 
-    .body { display: flex; align-items: center; gap: var(--space-8); white-space: nowrap; transition: opacity 150ms ease; }
+    .body { display: flex; align-items: center; gap: var(--space-8); white-space: nowrap; transition: opacity 220ms ease; }
     .stage.ok .body { opacity: 0; }
 
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); flex-shrink: 0; transition: background-color 250ms ease; }
-    .stage.tx .dot { display: none; }
+    .slot {
+      width: 13px; height: 13px; flex-shrink: 0;
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); transition: opacity 200ms ease; }
+    .stage.tx .dot, .stage.ok .dot, .stage.drop .dot { opacity: 0; }
 
-    /* Transcribing spinner: the arc grows and shrinks while rotating. */
-    .spin { width: 13px; height: 13px; flex-shrink: 0; display: none; }
-    .stage.tx .spin { display: block; animation: rotate 1.4s linear infinite; }
+    /* Transcribing spinner: the arc grows and shrinks while rotating.
+       It crossfades with the dot and keeps spinning while the row fades
+       out on success — the dot never comes back. */
+    .spin {
+      position: absolute; inset: 0;
+      opacity: 0;
+      transition: opacity 200ms ease;
+      animation: rotate 1.4s linear infinite;
+    }
+    .stage.tx .spin, .stage.ok .spin, .stage.drop .spin { opacity: 1; }
     .spin circle {
       fill: none;
       stroke: currentColor;
@@ -177,8 +189,10 @@
     <button type="button" class="x" id="closeBtn" aria-label="Close">×</button>
     <div class="capsule" id="capsule">
       <div class="body" id="capBody">
-        <span class="dot"></span>
-        <svg class="spin" viewBox="0 0 13 13" aria-hidden="true"><circle class="track" cx="6.5" cy="6.5" r="5.5"/><circle cx="6.5" cy="6.5" r="5.5"/></svg>
+        <span class="slot">
+          <span class="dot"></span>
+          <svg class="spin" viewBox="0 0 13 13" aria-hidden="true"><circle class="track" cx="6.5" cy="6.5" r="5.5"/><circle cx="6.5" cy="6.5" r="5.5"/></svg>
+        </span>
         <span class="wave" id="wave"></span>
         <span class="timer" id="timer">00:00</span>
       </div>
