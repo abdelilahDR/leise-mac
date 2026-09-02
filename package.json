@@ -1,6 +1,6 @@
 {
   "name": "leise",
-  "version": "1.7.6",
+  "version": "1.7.7",
   "description": "macOS voice dictation app using OpenAI Whisper",
   "main": "src/main.js",
   "scripts": {

@@ -10,7 +10,11 @@
 
   --glass-bg: rgba(252, 252, 253, 0.92);
   --glass-border: rgba(0, 0, 0, 0.08);
-  --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  /* Layered: contact + ambient. Max reach (offset + blur) stays under the
+     overlay window's 24px bottom margin, including the 5px success settle —
+     a bigger spread paints past the transparent window and clips to a
+     visible straight edge on light backgrounds. */
+  --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.10), 0 4px 14px rgba(0, 0, 0, 0.12);
   --glass-ink: #1D1D1F;
 
   --red: #FF3B30;
@@ -50,7 +54,7 @@
 
     --glass-bg: rgba(28, 28, 30, 0.88);
     --glass-border: rgba(255, 255, 255, 0.1);
-    --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.35);
     --glass-ink: #F2F2F4;
 
     --blue: #409CFF;
