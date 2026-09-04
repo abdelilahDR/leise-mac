@@ -105,6 +105,9 @@ if (DEMO) {
 if (process.env.LEISE_AUTOSTOP_TEST) {
   app.setPath('userData', path.join(app.getPath('temp'), 'leise-autostop-test-' + process.pid));
 }
+if (process.env.LEISE_MENUBAR_TEST) {
+  app.setPath('userData', path.join(app.getPath('temp'), 'leise-menubar-test-' + process.pid));
+}
 if (process.env.LEISE_RETRY_TEST) {
   app.setPath('userData', path.join(app.getPath('temp'), 'leise-retry-test-' + process.pid));
 }
@@ -342,6 +345,9 @@ let recorderWindow = null;
 let overlayWindow = null;
 let settingsWindow = null;
 let onboardingWindow = null;
+let pointerWindow = null;
+let pointerTimer = null;
+let pointerAnchor = null;
 let isRecording = false;
 let recordingStartedAt = 0;
 let isTestRecording = false;
@@ -725,7 +731,128 @@ function createOnboardingWindow(mode) {
 
   onboardingWindow.on('closed', () => {
     onboardingWindow = null;
+    // The Dock icon exists only to make first launch unmissable. Once the
+    // window is gone it has nothing to point at, whether onboarding was
+    // finished or abandoned.
+    if (app.dock) app.dock.hide();
   });
+}
+
+// LSUIElement keeps Leise out of the Dock, but app.focus({ steal: true })
+// raises the activation policy to regular and nothing lowers it again, so the
+// app sits in the Dock for the rest of the session. Any launch that could not
+// decrypt the stored key took that path. Drop back to accessory once the
+// window is up; hiding the Dock deactivates the app, so take focus again.
+function restoreAccessory(win) {
+  if (process.platform !== 'darwin' || !app.dock) return;
+  const drop = () => {
+    if (!config.onboardingComplete) return; // onboarding still wants the icon
+    app.dock.hide();
+    if (win && !win.isDestroyed()) win.focus();
+  };
+  if (!win || win.isDestroyed() || win.isVisible()) drop();
+  else win.once('ready-to-show', drop);
+}
+
+// ============================================
+// Menu bar pointer
+// ============================================
+
+// Created at the maximum, then resized to the card the renderer measures —
+// the bound shortcut can be anything from ⌃ Space to ⌘ ⇧ Space.
+const POINTER_MAX_WIDTH = 360;
+const POINTER_MAX_HEIGHT = 140;
+const POINTER_DWELL_MS = 8000;
+const KEY_GLYPHS = { Control: '⌃', Alt: '⌥', Shift: '⇧', Meta: '⌘', Command: '⌘', CommandOrControl: '⌘' };
+
+function displayShortcut(acc) {
+  return (acc || 'Control+Space').split('+').map((p) => KEY_GLYPHS[p] || p).join(' ');
+}
+
+// Centre the panel under the tray glyph, clamped to the display it sits on.
+// Returns the bounds plus the caret's window-relative x.
+function pointerPlacement(width, height) {
+  const display = screen.getDisplayNearestPoint(
+    pointerAnchor
+      ? { x: Math.round(pointerAnchor.x), y: Math.round(pointerAnchor.y) }
+      : screen.getCursorScreenPoint()
+  );
+  const area = display.workArea;
+  // The glyph can sit behind the notch or a menu bar manager, and then
+  // getBounds reports nothing. Fall back to the top right, where the menu
+  // bar's own overflow lives.
+  const centreX = pointerAnchor ? pointerAnchor.x : area.x + area.width - 24;
+  const y = Math.round(pointerAnchor ? pointerAnchor.y + 2 : area.y + 2);
+  let x = Math.round(centreX - width / 2);
+  x = Math.min(Math.max(x, area.x + 8), area.x + area.width - width - 8);
+  // Kept off the rounded corners so the caret never grows out of one.
+  const caret = Math.round(Math.min(Math.max(centreX - x, 28), width - 28));
+  return { x, y, width, height, caret };
+}
+
+// A reminder under the menu bar glyph: where Leise went, and how to call it.
+// Shown once onboarding finishes, and on every relaunch of an already-running
+// app — a menubar app otherwise answers a double click with nothing at all.
+function showTrayPointer() {
+  if (process.platform !== 'darwin') return;
+  if (onboardingWindow && !onboardingWindow.isDestroyed()) return;
+  if (pointerWindow && !pointerWindow.isDestroyed()) {
+    clearTimeout(pointerTimer);
+    pointerTimer = setTimeout(dismissTrayPointer, POINTER_DWELL_MS);
+    return;
+  }
+
+  const b = tray && !tray.isDestroyed() ? tray.getBounds() : null;
+  pointerAnchor = b && b.width ? { x: b.x + b.width / 2, y: b.y + b.height } : null;
+  const place = pointerPlacement(POINTER_MAX_WIDTH, POINTER_MAX_HEIGHT);
+
+  pointerWindow = new BrowserWindow({
+    width: place.width,
+    height: place.height,
+    x: place.x,
+    y: place.y,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    // Same as the overlay: a macOS shadow on a transparent window traces the
+    // content's alpha. Depth comes from the card's own box-shadow.
+    hasShadow: false,
+    type: 'panel', // macOS: doesn't activate the app when shown
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+    },
+  });
+
+  pointerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  pointerWindow.loadFile(path.join(__dirname, 'pointer.html'), {
+    query: { keys: displayShortcut(config.shortcut) },
+  });
+  // Shown by the pointer-size handler, once the window fits its content.
+  pointerWindow.on('closed', () => {
+    pointerWindow = null;
+    clearTimeout(pointerTimer);
+    pointerTimer = null;
+  });
+
+  clearTimeout(pointerTimer);
+  pointerTimer = setTimeout(dismissTrayPointer, POINTER_DWELL_MS);
+}
+
+function dismissTrayPointer() {
+  if (!pointerWindow || pointerWindow.isDestroyed()) return;
+  const win = pointerWindow;
+  // Let the panel play its exit and close itself back through close-pointer.
+  win.webContents.send('dismiss-pointer');
+  clearTimeout(pointerTimer);
+  // Backstop, in case the renderer never answers.
+  pointerTimer = setTimeout(() => {
+    if (win && !win.isDestroyed()) win.close();
+  }, 500);
 }
 
 function showOverlay(state, data = {}) {
@@ -1218,6 +1345,10 @@ ipcMain.on('content-height', (event, height) => {
   }
 });
 
+ipcMain.on('get-app-version', (event) => {
+  event.returnValue = app.getVersion();
+});
+
 ipcMain.on('get-product-name', (event) => {
   event.returnValue = PRODUCT_NAME;
 });
@@ -1429,6 +1560,26 @@ ipcMain.on('close-overlay', () => {
 
 // The window has no native close button any more; this is it. Deliberately not
 // completeOnboarding(): closing is not finishing.
+ipcMain.on('close-pointer', () => {
+  if (pointerWindow && !pointerWindow.isDestroyed()) pointerWindow.close();
+});
+
+// The panel reports the size of its hugged card. Fit the window to it, place
+// it under the glyph, hand back the caret offset, and only then show it — so
+// the intermediate size is never on screen.
+ipcMain.on('pointer-size', (event, width, height) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed() || win !== pointerWindow) return;
+  const place = pointerPlacement(
+    Math.min(Math.max(Math.round(width), 180), POINTER_MAX_WIDTH),
+    Math.min(Math.max(Math.round(height), 72), POINTER_MAX_HEIGHT)
+  );
+  win.setBounds({ x: place.x, y: place.y, width: place.width, height: place.height });
+  win.webContents.send('pointer-caret', place.caret);
+  // showInactive: the reminder must never take focus from what the user is typing in.
+  win.showInactive();
+});
+
 ipcMain.on('close-onboarding', () => {
   if (onboardingWindow && !onboardingWindow.isDestroyed()) {
     onboardingWindow.close();
@@ -1546,6 +1697,9 @@ ipcMain.handle('complete-onboarding', () => {
     onboardingWindow.close();
   }
 
+  // The window the user was looking at just disappeared. Say where the app went.
+  setTimeout(showTrayPointer, 300);
+
   return { success: true };
 });
 
@@ -1571,6 +1725,7 @@ app.whenReady().then(() => {
   } else if (!hasActiveKey()) {
     createSettingsWindow();
     app.focus({ steal: true });
+    restoreAccessory(settingsWindow);
   }
 
   if (DEMO) {
@@ -1613,7 +1768,7 @@ app.whenReady().then(() => {
   // Hygiene timer for the scheduled self-relaunch. Probes quit on their own
   // schedules, and a relaunched test child must not relaunch again.
   const suppressRelaunch = process.env.WHISP_UITEST || process.env.LEISE_FOCUS_TEST ||
-    process.env.LEISE_ONBOARD_TEST || process.env.LEISE_AUTOSTOP_TEST ||
+    process.env.LEISE_ONBOARD_TEST || process.env.LEISE_AUTOSTOP_TEST || process.env.LEISE_MENUBAR_TEST ||
     process.env.LEISE_RETRY_TEST || process.env.LEISE_CLEANUP_TEST || process.env.LEISE_CLEANUP_LIVE ||
     process.env.LEISE_FRESH || DEMO || process.argv.includes('--leise-relaunch-child');
   if (!suppressRelaunch) {
@@ -1650,6 +1805,10 @@ app.on('activate', () => {
     createOnboardingWindow();
   } else if (!settingsWindow && !hasActiveKey()) {
     createSettingsWindow();
+  } else {
+    // Reopened while already running. Without this the double click looks
+    // like nothing happened at all.
+    showTrayPointer();
   }
 });
 
@@ -1669,6 +1828,60 @@ if (process.env.LEISE_FOCUS_TEST) {
     const after = app.isActive ? app.isActive() : 'n/a';
     const focused = overlayWindow && overlayWindow.isFocused();
     console.log(`[focus-test] activeBefore=${before} activeAfter=${after} overlayFocused=${focused}`);
+    app.quit();
+  });
+}
+
+// Menu bar probe (LEISE_MENUBAR_TEST=1): first launch shows the Dock icon on purpose,
+// so onboarding cannot be missed. This checks it goes away again when that
+// window closes — whether the user pressed Done or just closed it, which used
+// to leave the icon sitting there for the rest of the session. Prints three
+// PASS/FAIL lines, then quits.
+if (process.env.LEISE_MENUBAR_TEST) {
+  app.whenReady().then(async () => {
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const say = (label, ok) => console.log(`[menubar-test] ${ok ? 'PASS' : 'FAIL'} ${label}`);
+    await tick(1800);
+
+    const onboardingUp = !!(onboardingWindow && !onboardingWindow.isDestroyed());
+    say('first launch shows the Dock icon', onboardingUp && app.dock.isVisible());
+
+    // The close button, not Done: the path that used to strand the icon.
+    if (onboardingUp) onboardingWindow.close();
+    await tick(900);
+    say('closing onboarding hides it again', !app.dock.isVisible());
+
+    // And it stays hidden when a window opens later.
+    createSettingsWindow();
+    app.focus({ steal: true });
+    restoreAccessory(settingsWindow);
+    await tick(1200);
+    say('a later window does not bring it back', !app.dock.isVisible());
+
+    // The pointer that replaces the Dock icon as the way back to the app.
+    const focusedBefore = BrowserWindow.getFocusedWindow();
+    showTrayPointer();
+    await tick(1400);
+    const up = !!(pointerWindow && !pointerWindow.isDestroyed() && pointerWindow.isVisible());
+    say('pointer opens', up);
+    say('pointer takes no focus', up && !pointerWindow.isFocused() &&
+      BrowserWindow.getFocusedWindow() === focusedBefore);
+
+    if (up) {
+      const b = pointerWindow.getBounds();
+      const t = tray.getBounds();
+      // The caret is drawn at the window-relative x the placement returned.
+      const caretX = b.x + pointerPlacement(b.width, b.height).caret;
+      const glyphX = t.x + t.width / 2;
+      say(`caret sits under the glyph (off by ${Math.round(Math.abs(caretX - glyphX))}px)`,
+        Math.abs(caretX - glyphX) <= 2);
+      say('pointer hangs from the menu bar', Math.abs(b.y - (t.y + t.height)) <= 4);
+    }
+
+    dismissTrayPointer();
+    await tick(900);
+    say('pointer dismisses', !pointerWindow);
+
     app.quit();
   });
 }
@@ -1962,6 +2175,16 @@ if (process.env.WHISP_UITEST) {
         await snap(settingsWindow, 'settings');
         await snap(onboardingWindow, 'onboarding');
 
+        // The menu bar pointer. It refuses to open while onboarding is up, so
+        // that window closes first.
+        if (onboardingWindow && !onboardingWindow.isDestroyed()) onboardingWindow.close();
+        await new Promise((r) => setTimeout(r, 200));
+        showTrayPointer();
+        // The panel measures itself and is placed before it shows, so give it
+        // that round trip before capturing.
+        await new Promise((r) => setTimeout(r, 1500));
+        await snap(pointerWindow, 'pointer');
+
         // Light mode pass: flip the theme source and re-capture.
         nativeTheme.themeSource = 'light';
         showOverlay('recording');
@@ -1974,6 +2197,11 @@ if (process.env.WHISP_UITEST) {
         await snap(overlayWindow, 'overlay-recording-light');
         clearInterval(lightLevels);
         await snap(settingsWindow, 'settings-light');
+
+        if (pointerWindow && !pointerWindow.isDestroyed()) pointerWindow.destroy();
+        showTrayPointer();
+        await new Promise((r) => setTimeout(r, 1500));
+        await snap(pointerWindow, 'pointer-light');
         console.log('[uitest] captured:', JSON.stringify(shots));
 
         // Optional burst capture of the live overlay loop for the README GIF.

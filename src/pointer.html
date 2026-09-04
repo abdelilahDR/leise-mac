@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Leise</title>
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      background: transparent;
+      overflow: hidden;
+      height: 100%;
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+      cursor: default;
+      user-select: none;
+    }
+
+    :root { --caret-h: 8px; }
+
+    .stage {
+      position: relative;
+      height: 100%;
+      /* Side and bottom room for --glass-shadow (max reach 4 + 14). A tighter
+         box clips the shadow to a straight edge, the same way it did on the
+         overlay. The top clears the caret, less 1px so the card's outline
+         runs behind its base instead of across it. */
+      padding: calc(var(--space-6) + var(--caret-h) - 1px) var(--space-16) var(--space-20);
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    .stage.shown {
+      opacity: 1;
+      transform: translateY(0);
+      transition: transform 260ms cubic-bezier(0.3, 1.4, 0.6, 1), opacity 160ms ease-out;
+    }
+    .stage.leaving {
+      opacity: 0;
+      transform: translateY(-4px);
+      transition: transform 140ms ease-in, opacity 120ms ease-in;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .stage, .stage.shown, .stage.leaving { transform: none; transition: opacity 120ms linear; }
+    }
+
+    /* The caret sits above the card and is nudged horizontally to stay under
+       the tray glyph when the card has been clamped to the screen edge. An
+       absolute position is right here: it is a pointer, not layout. */
+    .caret {
+      position: absolute;
+      top: var(--space-6);
+      left: var(--caret-x, 50%);
+      transform: translateX(-7px);
+      width: 14px; height: var(--caret-h);
+      color: var(--glass-bg);
+    }
+
+    .card {
+      /* Hugs, so the padding stays even whatever the bound shortcut is. The
+         window is sized to the measurement below before it is ever shown. */
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-12);
+      padding: var(--space-12) var(--space-16);
+      background: var(--glass-bg);
+      border: 0.5px solid var(--glass-border);
+      border-radius: var(--radius-group);
+      box-shadow: var(--glass-shadow);
+      color: var(--glass-ink);
+    }
+
+    /* The menu bar glyph is the middle three lenses, so that is what the
+       reminder shows. scripts/make-tray-icons.py draws the same three. */
+    .mark { width: 22px; height: 22px; flex: none; fill: var(--glass-ink); }
+
+    .copy { display: flex; flex-direction: column; gap: var(--space-4); }
+    .title { font-size: 13px; font-weight: 600; white-space: nowrap; }
+    .hint {
+      font-size: 12px; color: var(--secondary); white-space: nowrap;
+      display: flex; align-items: center; gap: var(--space-4);
+    }
+    kbd {
+      font-family: var(--mono); font-size: 11px;
+      border-radius: var(--radius-kbd); padding: var(--space-2) var(--space-6);
+      background: rgba(127, 127, 127, 0.18);
+    }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <svg class="caret" viewBox="0 0 14 8" aria-hidden="true">
+      <path d="M7 0.5L13.5 7.5H0.5z" fill="currentColor"/>
+      <!-- Only the two slanted sides, so the card's outline carries through
+           the caret instead of being drawn straight across its base. -->
+      <path d="M0.5 7.5L7 0.5L13.5 7.5" fill="none" stroke="var(--glass-border)" stroke-width="0.5"/>
+    </svg>
+    <div class="card">
+      <!-- The same three lenses at the same SPREAD 1.14 as the tray glyph,
+           so this reads as the icon the user is hunting for in the menu bar.
+           Source of truth: scripts/make-tray-icons.py. -->
+      <svg class="mark" viewBox="17.74 17.73 30.53 30.53" aria-hidden="true">
+        <ellipse cx="21.3751" cy="33.0002" rx="3.63317" ry="11.3464"/>
+        <ellipse cx="32.9069" cy="32.9998" rx="4.28718" ry="13.8368"/>
+        <ellipse cx="44.5447" cy="33.0" rx="3.72626" ry="9.68456"/>
+      </svg>
+      <div class="copy">
+        <div class="title">Leise lives up here.</div>
+        <div class="hint"><kbd id="mod">⌃</kbd><kbd id="key">Space</kbd><span>to dictate.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const api = window.electronAPI;
+    const stage = document.getElementById('stage');
+    const params = new URLSearchParams(location.search);
+
+    // The shortcut is user-configurable; show whatever is bound.
+    const keys = (params.get('keys') || '⌃ Space').split(' ');
+    document.getElementById('mod').textContent = keys[0];
+    document.getElementById('key').textContent = keys.slice(1).join(' ') || 'Space';
+
+    // Measure the hugged card and let main size the window to it. Main then
+    // sends back the caret offset for the final position, and only then is
+    // the window shown — so none of this is ever on screen.
+    const CSS = getComputedStyle(document.querySelector('.stage'));
+    const sideX = parseFloat(CSS.paddingLeft) + parseFloat(CSS.paddingRight);
+    const sideY = parseFloat(CSS.paddingTop) + parseFloat(CSS.paddingBottom);
+    const box = document.querySelector('.card').getBoundingClientRect();
+    api.sizePointer(Math.ceil(box.width + sideX), Math.ceil(box.height + sideY));
+
+    // Caret x is window-relative, so it still lands under the tray glyph after
+    // the card has been clamped away from a display edge.
+    api.onPointerCaret((x) => {
+      document.documentElement.style.setProperty('--caret-x', x + 'px');
+      requestAnimationFrame(() => stage.classList.add('shown'));
+    });
+
+    let leaving = false;
+    function dismiss() {
+      if (leaving) return;
+      leaving = true;
+      stage.classList.remove('shown');
+      stage.classList.add('leaving');
+      // Exit mirrors the enter, reversed and shorter.
+      setTimeout(() => api.closePointer(), 150);
+    }
+
+    document.addEventListener('click', dismiss);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') dismiss(); });
+    api.onDismissPointer(dismiss);
+  </script>
+</body>
+</html>

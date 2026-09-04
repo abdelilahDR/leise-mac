@@ -129,6 +129,7 @@
     textarea.vocab::placeholder { color: var(--secondary); opacity: 0.7; }
 
     .foot { font-size: 11px; color: var(--secondary); opacity: 0.75; margin-top: var(--space-16); text-align: center; }
+    .foot .ver { display: block; margin-top: var(--space-4); font-variant-numeric: tabular-nums; }
     #vocabSaved {
       font-size: 10px; letter-spacing: 0.04em; color: var(--green);
       opacity: 0; transition: opacity 250ms ease; margin-left: var(--space-4);
@@ -192,10 +193,11 @@
     <textarea class="vocab" id="vocab" spellcheck="false" placeholder="Names and jargon, one per line or comma-separated. Leise uses them as spelling hints."></textarea>
   </div>
 
-  <div class="foot">Changes apply instantly</div>
+  <div class="foot">Changes apply instantly<span class="ver" id="version"></span></div>
 
   <script>
     const api = window.electronAPI;
+    document.getElementById('version').textContent = `${api.productName} ${api.appVersion}`;
     function reportHeight() {
       const foot = document.querySelector('.foot');
       const h = foot.offsetTop + foot.offsetHeight + 20;

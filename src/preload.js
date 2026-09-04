@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Sandboxed preloads cannot require local modules; the name comes from main.
 contextBridge.exposeInMainWorld('electronAPI', {
   productName: ipcRenderer.sendSync('get-product-name'),
+  appVersion: ipcRenderer.sendSync('get-app-version'),
   // Settings
   getConfig: () => ipcRenderer.invoke('get-config'),
   saveConfig: (config) => ipcRenderer.invoke('save-config', config),
@@ -39,6 +40,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onShowSettings: (callback) => ipcRenderer.on('show-settings', () => callback()),
   closeSettings: () => ipcRenderer.send('close-settings'),
   closeOnboarding: () => ipcRenderer.send('close-onboarding'),
+
+  // Menu bar pointer
+  closePointer: () => ipcRenderer.send('close-pointer'),
+  sizePointer: (width, height) => ipcRenderer.send('pointer-size', width, height),
+  onPointerCaret: (callback) => ipcRenderer.on('pointer-caret', (_event, x) => callback(x)),
+  onDismissPointer: (callback) => ipcRenderer.on('dismiss-pointer', () => callback()),
 
   // Onboarding - Permission checks
   checkMicrophone: () => ipcRenderer.invoke('check-microphone'),
