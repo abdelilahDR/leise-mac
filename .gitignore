@@ -4,3 +4,8 @@ out/
 .DS_Store
 *.log
 .env
+
+# Local working files: design exploration and session scratch. Anchored to the
+# repo root so a future src/design/ is not swept up with them.
+/design/
+/.claude/

@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Settings window
   onShowSettings: (callback) => ipcRenderer.on('show-settings', () => callback()),
   closeSettings: () => ipcRenderer.send('close-settings'),
+  closeOnboarding: () => ipcRenderer.send('close-onboarding'),
 
   // Onboarding - Permission checks
   checkMicrophone: () => ipcRenderer.invoke('check-microphone'),

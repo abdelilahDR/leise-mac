@@ -1,0 +1,24 @@
+<svg width="66" height="66" viewBox="0 0 66 66" fill="none" xmlns="http://www.w3.org/2000/svg">
+<!-- No SVG <filter>: filterUnits="userSpaceOnUse" pins the filter region to 66
+     user units, so the renderer rasterises at icon size and upscales, which
+     shows as rough corners and a hard seam. The inner glow is a clipped
+     gradient band instead, so the whole tile stays vector at any size. -->
+<g clip-path="url(#dp-c)">
+<path d="M 34 0 c 11.2011 0 16.8016 0 21.0798 2.1799 a 20.0000 20.0000 0 0 1 8.7403 8.7403 c 2.1799 4.2782 2.1799 9.8788 2.1799 21.0798 L 66 34 c 0 11.2011 0 16.8016 -2.1799 21.0798 a 20.0000 20.0000 0 0 1 -8.7403 8.7403 c -4.2782 2.1799 -9.8788 2.1799 -21.0798 2.1799 L 32 66 c -11.2011 0 -16.8016 0 -21.0798 -2.1799 a 20.0000 20.0000 0 0 1 -8.7403 -8.7403 c -2.1799 -4.2782 -2.1799 -9.8788 -2.1799 -21.0798 L 0 32 c 0 -11.2011 0 -16.8016 2.1799 -21.0798 a 20.0000 20.0000 0 0 1 8.7403 -8.7403 c 4.2782 -2.1799 9.8788 -2.1799 21.0798 -2.1799 Z" fill="#0B0B14"/>
+<ellipse cx="16.5" cy="64" rx="31.5" ry="28" fill="url(#dp-p0)" style="mix-blend-mode:color"/>
+<ellipse cx="66" cy="24.5" rx="40" ry="41.5" fill="url(#dp-p1)" style="mix-blend-mode:saturation"/>
+<rect x="0" y="58" width="66" height="8" fill="url(#dp-g)" style="mix-blend-mode:color"/>
+</g>
+<defs>
+<radialGradient id="dp-p0" cx="0" cy="0" r="1" gradientTransform="matrix(36 -8.88889 10 32 12 72.8889)" gradientUnits="userSpaceOnUse">
+<stop stop-color="#FF9860"/><stop offset="1" stop-color="#FF9860" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="dp-p1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(66 24.5) scale(40 41.5)">
+<stop stop-color="#9CCBFF"/><stop offset="1" stop-color="#9CCBFF" stop-opacity="0"/>
+</radialGradient>
+<linearGradient id="dp-g" x1="0" y1="66" x2="0" y2="58" gradientUnits="userSpaceOnUse">
+<stop stop-color="#FFB288" stop-opacity="1"/><stop offset="1" stop-color="#FFB288" stop-opacity="0"/>
+</linearGradient>
+<clipPath id="dp-c"><path d="M 34 0 c 11.2011 0 16.8016 0 21.0798 2.1799 a 20.0000 20.0000 0 0 1 8.7403 8.7403 c 2.1799 4.2782 2.1799 9.8788 2.1799 21.0798 L 66 34 c 0 11.2011 0 16.8016 -2.1799 21.0798 a 20.0000 20.0000 0 0 1 -8.7403 8.7403 c -4.2782 2.1799 -9.8788 2.1799 -21.0798 2.1799 L 32 66 c -11.2011 0 -16.8016 0 -21.0798 -2.1799 a 20.0000 20.0000 0 0 1 -8.7403 -8.7403 c -2.1799 -4.2782 -2.1799 -9.8788 -2.1799 -21.0798 L 0 32 c 0 -11.2011 0 -16.8016 2.1799 -21.0798 a 20.0000 20.0000 0 0 1 8.7403 -8.7403 c 4.2782 -2.1799 9.8788 -2.1799 21.0798 -2.1799 Z"/></clipPath>
+</defs>
+</svg>

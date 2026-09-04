@@ -55,7 +55,7 @@ function playSound(soundName) {
 // so the key is re-entered once in Settings.
 (function migrateLegacyUserData() {
   try {
-    if (process.env.LEISE_ONBOARD_TEST || process.env.LEISE_FRESH) return; // fresh-install simulations
+    if (process.env.LEISE_ONBOARD_TEST || process.env.LEISE_FRESH || process.env.LEISE_DEMO) return; // fresh-install simulations
 
     const fresh = !fs.existsSync(path.join(app.getPath('userData'), 'config.json'));
     if (!fresh) return;
@@ -91,6 +91,16 @@ if (process.env.LEISE_ONBOARD_TEST) {
 // migration, otherwise the real app.
 if (process.env.LEISE_FRESH) {
   app.setPath('userData', path.join(app.getPath('temp'), 'leise-fresh-demo'));
+}
+// LEISE_DEMO: the end-to-end test environment. Every launch is a first launch —
+// the userData directory is wiped, so onboarding always runs from the top. The
+// gates that block a walkthrough are opened (permissions, key validation); the
+// product itself — recording, transcription, insertion — is untouched.
+const DEMO = !!process.env.LEISE_DEMO;
+if (DEMO) {
+  const dir = path.join(app.getPath('temp'), 'leise-demo');
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (err) { /* first run */ }
+  app.setPath('userData', dir);
 }
 if (process.env.LEISE_AUTOSTOP_TEST) {
   app.setPath('userData', path.join(app.getPath('temp'), 'leise-autostop-test-' + process.pid));
@@ -155,13 +165,17 @@ const CONFIG_DEFAULTS = {
   apiKey: '',
   groqApiKey: '',
   transcriptionProvider: 'groq',
-  shortcut: 'Control+Space',
+  // Demo runs alongside the installed app, which already holds Control+Space;
+  // a second registration silently fails and recording would never start.
+  shortcut: process.env.LEISE_DEMO ? 'Control+Alt+Space' : 'Control+Space',
   soundsEnabled: true,
   autoPasteEnabled: true,
   autoStopEnabled: false, // stop recording on sustained silence after speech
   cleanupEnabled: false, // LLM pass: collapse repeats, apply spoken corrections, strip filler
   preferredInputDeviceId: '',
-  appearance: 'system', // system | light | dark, drives nativeTheme.themeSource
+  // system | light | dark, drives nativeTheme.themeSource. Demo can start in a
+  // given mode so both can be checked without touching System Settings.
+  appearance: (process.env.LEISE_DEMO && process.env.LEISE_DEMO_THEME) || 'system',
   customVocabulary: '', // names and jargon, passed to Whisper as a spelling hint
 };
 
@@ -186,8 +200,43 @@ function loadConfig() {
 
 // The key that actually matters is the active provider's key — a Groq-only
 // setup is fully valid (and the default).
+// Demo only. Onboarding accepts whatever is typed so the flow is never
+// blocked, but the transcription call still needs a key that works — otherwise
+// the first recording comes back "Invalid API Key". Prefer LEISE_DEMO_KEY, else
+// borrow the installed app's key: same app identity, so safeStorage decrypts it.
+let demoKeyCache = null;
+function demoRealKeys() {
+  if (!DEMO) return {};
+  if (demoKeyCache) return demoKeyCache;
+  const out = {};
+  if (process.env.LEISE_DEMO_KEY) {
+    out.apiKey = process.env.LEISE_DEMO_KEY;
+    out.groqApiKey = process.env.LEISE_DEMO_KEY;
+  } else {
+    try {
+      const installed = path.join(app.getPath('appData'), PRODUCT_NAME, 'config.json');
+      const raw = JSON.parse(fs.readFileSync(installed, 'utf8'));
+      for (const f of KEY_FIELDS) {
+        const dec = raw[f + 'Enc'] ? decryptKey(raw[f + 'Enc']) : raw[f];
+        if (dec) out[f] = dec;
+      }
+    } catch (err) {
+      console.log('[demo] no installed key to borrow:', err.message);
+    }
+  }
+  demoKeyCache = out;
+  return out;
+}
+
+// The key the app should actually transcribe with.
+function effectiveKey(field) {
+  if (!DEMO) return config[field];
+  return demoRealKeys()[field] || config[field];
+}
+
 function hasActiveKey() {
-  return (config.transcriptionProvider === 'openai') ? !!config.apiKey : !!config.groqApiKey;
+  return (config.transcriptionProvider === 'openai')
+    ? !!effectiveKey('apiKey') : !!effectiveKey('groqApiKey');
 }
 
 function saveConfig(newConfig) {
@@ -533,10 +582,10 @@ function createRecorderWindow() {
   recorderWindow.webContents.on('did-finish-load', () => {
     // Send API keys and provider to recorder
     if (config.apiKey) {
-      recorderWindow.webContents.send('set-api-key', config.apiKey);
+      recorderWindow.webContents.send('set-api-key', effectiveKey('apiKey'));
     }
     if (config.groqApiKey) {
-      recorderWindow.webContents.send('set-groq-api-key', config.groqApiKey);
+      recorderWindow.webContents.send('set-groq-api-key', effectiveKey('groqApiKey'));
     }
     recorderWindow.webContents.send('set-transcription-provider', config.transcriptionProvider || 'openai');
   });
@@ -653,7 +702,17 @@ function createOnboardingWindow(mode) {
     resizable: false,
     minimizable: false,
     maximizable: false,
-    titleBarStyle: 'hiddenInset',
+    // The design gives this window a 20px corner radius; macOS will not set
+    // that on a framed window, so the window is transparent and the renderer
+    // paints the panel. Two consequences, both handled in onboarding.html:
+    // vibrancy cannot be clipped to a rounded body (it would paint the full
+    // square rect behind it), so the ground is solid; and a transparent window
+    // has no native traffic lights, so they are drawn.
+    frame: false,
+    transparent: true,
+    roundedCorners: false,
+    hasShadow: true,
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1125,8 +1184,8 @@ ipcMain.handle('save-config', (event, newConfig) => {
   const success = saveConfig(config);
 
   if (recorderWindow && !recorderWindow.isDestroyed()) {
-    recorderWindow.webContents.send('set-api-key', config.apiKey);
-    recorderWindow.webContents.send('set-groq-api-key', config.groqApiKey);
+    recorderWindow.webContents.send('set-api-key', effectiveKey('apiKey'));
+    recorderWindow.webContents.send('set-groq-api-key', effectiveKey('groqApiKey'));
     recorderWindow.webContents.send('set-transcription-provider', config.transcriptionProvider || 'openai');
   }
 
@@ -1151,6 +1210,12 @@ ipcMain.on('content-height', (event, height) => {
   if (!win || win.isDestroyed() || win === overlayWindow || win === recorderWindow) return;
   const clamped = Math.max(320, Math.min(Math.round(height), 860));
   win.setContentSize(400, clamped, true);
+  // A transparent window's shadow is derived from its drawn alpha and is not
+  // recomputed on resize, so it would keep the previous screen's outline.
+  if (win === onboardingWindow && process.platform === 'darwin') {
+    win.setHasShadow(false);
+    win.setHasShadow(true);
+  }
 });
 
 ipcMain.on('get-product-name', (event) => {
@@ -1158,6 +1223,9 @@ ipcMain.on('get-product-name', (event) => {
 });
 
 ipcMain.handle('test-api-key', async (event, apiKey) => {
+  // Anything non-empty passes: the point is to walk the flow, not to hold a
+  // real OpenAI key. Transcription still needs a real one.
+  if (DEMO) return { success: !!(apiKey && apiKey.trim()) };
   try {
     const fetch = require('node-fetch');
     const response = await fetch('https://api.openai.com/v1/models', {
@@ -1178,6 +1246,7 @@ ipcMain.handle('test-api-key', async (event, apiKey) => {
 });
 
 ipcMain.handle('test-groq-api-key', async (event, apiKey) => {
+  if (DEMO) return { success: !!(apiKey && apiKey.trim()) };
   try {
     const fetch = require('node-fetch');
     const response = await fetch('https://api.groq.com/openai/v1/models', {
@@ -1358,6 +1427,14 @@ ipcMain.on('close-overlay', () => {
   resetToIdle();
 });
 
+// The window has no native close button any more; this is it. Deliberately not
+// completeOnboarding(): closing is not finishing.
+ipcMain.on('close-onboarding', () => {
+  if (onboardingWindow && !onboardingWindow.isDestroyed()) {
+    onboardingWindow.close();
+  }
+});
+
 ipcMain.on('close-settings', () => {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.close();
@@ -1369,6 +1446,7 @@ ipcMain.on('close-settings', () => {
 // ============================================
 
 ipcMain.handle('check-microphone', async () => {
+  if (DEMO) return { granted: true };
   try {
     // On macOS, check if we have microphone permission
     const status = systemPreferences.getMediaAccessStatus('microphone');
@@ -1379,6 +1457,7 @@ ipcMain.handle('check-microphone', async () => {
 });
 
 ipcMain.handle('request-microphone', async () => {
+  if (DEMO) return { granted: true };
   try {
     // Request microphone permission on macOS
     const granted = await systemPreferences.askForMediaAccess('microphone');
@@ -1389,11 +1468,13 @@ ipcMain.handle('request-microphone', async () => {
 });
 
 ipcMain.handle('check-accessibility', () => {
+  if (DEMO) return { granted: true };
   const granted = systemPreferences.isTrustedAccessibilityClient(false);
   return { granted };
 });
 
 ipcMain.handle('request-accessibility', () => {
+  if (DEMO) return { prompted: true };
   // This will prompt the user to grant accessibility permission
   systemPreferences.isTrustedAccessibilityClient(true);
   return { prompted: true };
@@ -1492,6 +1573,13 @@ app.whenReady().then(() => {
     app.focus({ steal: true });
   }
 
+  if (DEMO) {
+    console.log('\n  LEISE DEMO — fresh install every launch');
+    console.log('  userData   ' + app.getPath('userData'));
+    console.log('  record     ' + (config.shortcut || 'Control+Alt+Space') + '  (installed app keeps Control+Space)');
+    console.log('  mic + accessibility granted, any API key accepted');
+  }
+
   // Register global shortcut
   const shortcut = config.shortcut || 'Control+Space';
   const registered = globalShortcut.register(shortcut, () => {
@@ -1506,12 +1594,28 @@ app.whenReady().then(() => {
     }).show();
   }
 
+  if (DEMO) {
+    // Flip appearance live, so light and dark can be compared on the same
+    // window without relaunching or changing System Settings.
+    const CYCLE = ['system', 'light', 'dark'];
+    globalShortcut.register('Control+Alt+L', () => {
+      const next = CYCLE[(CYCLE.indexOf(config.appearance) + 1) % CYCLE.length];
+      config.appearance = next;
+      applyAppearance();
+      console.log('[demo] appearance ->', next);
+      new Notification({ title: PRODUCT_NAME, body: 'Appearance: ' + next }).show();
+    });
+    console.log('  appearance ' + config.appearance + '  (⌃⌥L cycles system / light / dark)');
+    const bk = demoRealKeys();
+    console.log('  key        ' + (bk.groqApiKey || bk.apiKey ? 'borrowed from the installed app' : 'none found — transcription will fail') + '\n');
+  }
+
   // Hygiene timer for the scheduled self-relaunch. Probes quit on their own
   // schedules, and a relaunched test child must not relaunch again.
   const suppressRelaunch = process.env.WHISP_UITEST || process.env.LEISE_FOCUS_TEST ||
     process.env.LEISE_ONBOARD_TEST || process.env.LEISE_AUTOSTOP_TEST ||
     process.env.LEISE_RETRY_TEST || process.env.LEISE_CLEANUP_TEST || process.env.LEISE_CLEANUP_LIVE ||
-    process.env.LEISE_FRESH || process.argv.includes('--leise-relaunch-child');
+    process.env.LEISE_FRESH || DEMO || process.argv.includes('--leise-relaunch-child');
   if (!suppressRelaunch) {
     setInterval(maybeSelfRelaunch, RELAUNCH_CHECK_MS);
   }

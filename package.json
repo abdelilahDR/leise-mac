@@ -1,12 +1,15 @@
 {
   "name": "leise",
-  "version": "1.7.7",
+  "version": "1.8.0",
   "description": "macOS voice dictation app using OpenAI Whisper",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --mac",
-    "pack": "electron-builder --mac --dir"
+    "pack": "electron-builder --mac --dir",
+    "demo": "LEISE_DEMO=1 electron .",
+    "demo:light": "LEISE_DEMO=1 LEISE_DEMO_THEME=light electron .",
+    "demo:dark": "LEISE_DEMO=1 LEISE_DEMO_THEME=dark electron ."
   },
   "author": "Moonsight",
   "license": "MIT",
@@ -24,7 +27,16 @@
     "files": [
       "**/*",
       "!.claude",
-      "!.claude/**"
+      "!.claude/**",
+      "!design",
+      "!design/**",
+      "!assets",
+      "!assets/**",
+      "!scripts",
+      "!scripts/**",
+      "!docs",
+      "!docs/**",
+      "!BACKLOG.md"
     ],
     "mac": {
       "category": "public.app-category.productivity",

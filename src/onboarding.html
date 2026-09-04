@@ -6,12 +6,24 @@
   <link rel="stylesheet" href="tokens.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* The window is transparent so it can carry the design's 20px corner, which
+       macOS will not set on a framed window. Everything visible is painted
+       here, and the ground is solid: a vibrancy view cannot be clipped to a
+       rounded body, it would paint the full square window rect behind it. */
+    /* Both stay transparent: a background set on body is propagated to the
+       canvas and painted over the whole square window, ignoring any radius on
+       body itself. The panel is drawn as a layer instead. */
+    html, body { background: transparent; }
+    body::before {
+      content: ''; position: fixed; inset: 0; z-index: -1;
+      background: var(--ground);
+      border-radius: var(--radius-window);
+    }
     body {
       font-family: var(--font);
-      background: var(--ground);
       color: var(--ink);
       font-size: 13px;
-      padding: var(--space-40) var(--space-20) var(--space-20);
+      padding: var(--space-40) var(--space-20) var(--space-16);
       overflow: hidden;
       -webkit-font-smoothing: antialiased;
       height: 100vh;
@@ -19,33 +31,57 @@
       flex-direction: column;
     }
     .drag-region { position: fixed; top: 0; left: 0; right: 0; height: 40px; -webkit-app-region: drag; z-index: 100; }
+    /* A transparent window gets no native window buttons, so these are ours.
+       The window is neither minimizable nor maximizable, so only close acts —
+       the other two are drawn in the disabled grey macOS uses for them. */
+    .lights { position: fixed; top: 18px; left: 18px; display: flex; gap: 8px; z-index: 101; }
+    .lights button, .lights span {
+      width: 12px; height: 12px; border-radius: 50%; border: none; padding: 0;
+      -webkit-app-region: no-drag;
+    }
+    .lights span { background: var(--light-off); }
+    .lights .close {
+      background: #FF5F57; cursor: pointer; position: relative;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .lights .close svg { width: 6px; height: 6px; opacity: 0; transition: opacity 120ms ease; }
+    .lights:hover .close svg { opacity: 0.55; }
+    .lights .close:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
     .screen { display: none; flex-direction: column; flex: 1; }
     .screen.visible { display: flex; }
 
     h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4px; }
-    .sub { font-size: 13px; color: var(--secondary); margin-bottom: 16px; text-wrap: pretty; line-height: 1.45; }
+    .sub { font-size: 13px; color: var(--secondary); margin-bottom: var(--space-8); text-wrap: pretty; line-height: 1.45; }
     .center { text-align: center; }
 
+    /* The app tile, inlined from assets/icon/svg so it scales and needs no
+       packaged file. Two plates, swapped by appearance — the old hero baked in
+       a light-mode blue that never changed in dark. */
     .hero-mark {
-      width: 68px; height: 68px; border-radius: 50%;
-      margin: var(--space-24) auto var(--space-16);
-      display: flex; align-items: center; justify-content: center;
-      background: rgba(0, 122, 255, 0.1);
-      color: var(--blue);
+      position: relative;
+      width: 66px; height: 66px;
+      margin: var(--space-24) auto var(--space-20);
     }
-    .hero-mark svg { width: 30px; height: 30px; }
+    .hero-mark svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .hero-mark .plate-dark { display: none; }
+    .hero-mark .ln { fill: var(--mark-ink); }
+    @media (prefers-color-scheme: dark) {
+      .hero-mark .plate-light { display: none; }
+      .hero-mark .plate-dark { display: block; }
+    }
 
     .group {
-      background: var(--surface);
+      background: var(--glass-surface);
       border: 0.5px solid var(--hairline);
       border-radius: var(--radius-group);
+      box-shadow: inset 0 1px 0 var(--glass-highlight);
       overflow: hidden;
-      margin-bottom: 8px;
+      margin-bottom: var(--space-8);
     }
     .row {
       display: flex; align-items: center; justify-content: space-between;
-      gap: var(--space-12); min-height: 44px; padding: var(--space-8) var(--space-12);
+      gap: var(--space-12); min-height: var(--size-row); padding: var(--space-8) var(--space-12);
     }
     .row + .row { border-top: 0.5px solid var(--row-sep); }
     .row .nm { font-weight: 500; }
@@ -53,22 +89,27 @@
     .state-wait { color: var(--secondary); font-size: 12px; }
 
     .btn {
-      background: var(--blue); color: #fff;
-      border: none; border-radius: 6px;
+      background: var(--action); color: var(--on-action);
+      border: none; border-radius: var(--radius-control);
       font-family: inherit; font-size: 12px; font-weight: 500;
       padding: var(--space-4) var(--space-12); cursor: pointer;
+      transition: filter 140ms ease, opacity 140ms ease;
     }
-    .btn:disabled { opacity: 0.4; cursor: default; }
+    /* A saturated accent reads as interactive on its own; a neutral fill does
+       not, so it needs explicit feedback. brightness() works in both themes
+       because --action inverts. */
+    .btn:hover:not(:disabled) { filter: brightness(1.12); }
+    .btn:active:not(:disabled) { filter: brightness(0.90); }
+    .btn:disabled { opacity: 0.4; cursor: default; filter: none; }
     .btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
     .btn-wide {
       display: block; width: 100%; padding: var(--space-8) 0; margin-top: auto;
-      font-size: 13px; border-radius: 8px;
+      font-size: 13px; border-radius: var(--radius-button-wide);
     }
-    .btn-ghost { background: transparent; color: var(--blue); }
 
-    .seg { display: flex; border-radius: 7px; padding: 2px; background: var(--seg-track); font-size: 12px; margin-bottom: 8px; }
+    .seg { display: flex; border-radius: var(--radius-seg-track); padding: 2px; background: var(--seg-track); font-size: 12px; margin-bottom: 8px; }
     .seg button {
-      flex: 1; text-align: center; padding: var(--space-4) 0; border-radius: 5px;
+      flex: 1; text-align: center; padding: var(--space-4) 0; border-radius: var(--radius-seg-thumb);
       font-weight: 500; opacity: 0.65; border: none; background: transparent;
       color: inherit; font-family: inherit; font-size: inherit; cursor: pointer;
     }
@@ -88,15 +129,36 @@
     .help { font-size: 11.5px; color: var(--secondary); margin: 2px 2px 0; }
     .help a { color: var(--blue); text-decoration: none; cursor: pointer; }
 
+    /* The one thing this screen has to communicate. Big enough to read as an
+       instruction rather than as body copy, and it renders the real accelerator
+       from config, so a rebound shortcut is what gets shown. */
+    .press {
+      display: flex; flex-direction: column; align-items: center; gap: var(--space-8);
+      margin: var(--space-16) 0 var(--space-20);
+    }
+    .caps { display: flex; align-items: center; gap: var(--space-6); }
+    .cap {
+      font-family: var(--mono); font-size: 15px; font-weight: 500; line-height: 1;
+      color: var(--ink);
+      background: var(--glass-surface);
+      border: 0.5px solid var(--hairline);
+      border-radius: var(--radius-control);
+      box-shadow: inset 0 1px 0 var(--glass-highlight), 0 1px 2px rgba(0, 0, 0, 0.10);
+      padding: var(--space-12) var(--space-16);
+      min-width: 44px; text-align: center;
+    }
+    .press-note { font-size: 12px; color: var(--secondary); }
+
     kbd {
-      font-family: var(--mono); font-size: 11px; border-radius: 4px; padding: var(--space-2) var(--space-6);
+      font-family: var(--mono); font-size: 11px; border-radius: var(--radius-kbd); padding: var(--space-2) var(--space-6);
       background: rgba(127, 127, 127, 0.18);
     }
 
     textarea {
       width: 100%; min-height: 96px; resize: none;
-      background: var(--surface); color: var(--ink);
+      background: var(--glass-surface); color: var(--ink);
       border: 0.5px solid var(--hairline); border-radius: var(--radius-group);
+      box-shadow: inset 0 1px 0 var(--glass-highlight);
       font-family: inherit; font-size: 13px; line-height: 1.5;
       padding: var(--space-12) var(--space-16); outline: none;
     }
@@ -112,10 +174,73 @@
 </head>
 <body>
   <div class="drag-region"></div>
+  <div class="lights">
+    <button type="button" class="close" id="btnClose" aria-label="Close">
+      <svg viewBox="0 0 6 6" aria-hidden="true"><path d="M1 1l4 4M5 1L1 5" stroke="#4D0000" stroke-width="1.2" stroke-linecap="round"/></svg>
+    </button>
+    <span aria-hidden="true"></span>
+    <span aria-hidden="true"></span>
+  </div>
 
   <!-- 1 · Welcome -->
   <div class="screen center" id="s-welcome">
-    <div class="hero-mark"><svg viewBox="0 0 16 16"><rect x="6" y="1.8" width="4" height="7.4" rx="2" fill="currentColor"/><path d="M3.6 7.6a4.4 4.4 0 0 0 8.8 0M8 12v2.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+    <div class="hero-mark" aria-hidden="true">
+      <svg class="plate-light" viewBox="0 0 66 66" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <!-- No SVG <filter>: filterUnits="userSpaceOnUse" pins the filter region to 66
+           user units, so the renderer rasterises at icon size and upscales, which
+           shows as rough corners and a hard seam. The inner glow is a clipped
+           gradient band instead, so the whole tile stays vector at any size. -->
+      <g clip-path="url(#lp-c)">
+      <path d="M 34 0 c 11.2011 0 16.8016 0 21.0798 2.1799 a 20.0000 20.0000 0 0 1 8.7403 8.7403 c 2.1799 4.2782 2.1799 9.8788 2.1799 21.0798 L 66 34 c 0 11.2011 0 16.8016 -2.1799 21.0798 a 20.0000 20.0000 0 0 1 -8.7403 8.7403 c -4.2782 2.1799 -9.8788 2.1799 -21.0798 2.1799 L 32 66 c -11.2011 0 -16.8016 0 -21.0798 -2.1799 a 20.0000 20.0000 0 0 1 -8.7403 -8.7403 c -2.1799 -4.2782 -2.1799 -9.8788 -2.1799 -21.0798 L 0 32 c 0 -11.2011 0 -16.8016 2.1799 -21.0798 a 20.0000 20.0000 0 0 1 8.7403 -8.7403 c 4.2782 -2.1799 9.8788 -2.1799 21.0798 -2.1799 Z" fill="white"/>
+      <ellipse cx="16.5" cy="64" rx="31.5" ry="28" fill="url(#lp-p0)"/>
+      <ellipse cx="66" cy="24.5" rx="40" ry="41.5" fill="url(#lp-p1)"/>
+      <rect x="0" y="58" width="66" height="8" fill="url(#lp-g)"/>
+      </g>
+      <defs>
+      <radialGradient id="lp-p0" cx="0" cy="0" r="1" gradientTransform="matrix(36 -8.88889 10 32 12 72.8889)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF9860"/><stop offset="1" stop-color="#FF9860" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="lp-p1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(66 24.5) scale(40 41.5)">
+      <stop stop-color="#9CCBFF"/><stop offset="1" stop-color="#9CCBFF" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="lp-g" x1="0" y1="66" x2="0" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFB288" stop-opacity="0.42"/><stop offset="1" stop-color="#FFB288" stop-opacity="0"/>
+      </linearGradient>
+      <clipPath id="lp-c"><path d="M 34 0 c 11.2011 0 16.8016 0 21.0798 2.1799 a 20.0000 20.0000 0 0 1 8.7403 8.7403 c 2.1799 4.2782 2.1799 9.8788 2.1799 21.0798 L 66 34 c 0 11.2011 0 16.8016 -2.1799 21.0798 a 20.0000 20.0000 0 0 1 -8.7403 8.7403 c -4.2782 2.1799 -9.8788 2.1799 -21.0798 2.1799 L 32 66 c -11.2011 0 -16.8016 0 -21.0798 -2.1799 a 20.0000 20.0000 0 0 1 -8.7403 -8.7403 c -2.1799 -4.2782 -2.1799 -9.8788 -2.1799 -21.0798 L 0 32 c 0 -11.2011 0 -16.8016 2.1799 -21.0798 a 20.0000 20.0000 0 0 1 8.7403 -8.7403 c 4.2782 -2.1799 9.8788 -2.1799 21.0798 -2.1799 Z"/></clipPath>
+      </defs>
+      </svg>
+      <svg class="plate-dark" viewBox="0 0 66 66" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <!-- No SVG <filter>: filterUnits="userSpaceOnUse" pins the filter region to 66
+           user units, so the renderer rasterises at icon size and upscales, which
+           shows as rough corners and a hard seam. The inner glow is a clipped
+           gradient band instead, so the whole tile stays vector at any size. -->
+      <g clip-path="url(#dp-c)">
+      <path d="M 34 0 c 11.2011 0 16.8016 0 21.0798 2.1799 a 20.0000 20.0000 0 0 1 8.7403 8.7403 c 2.1799 4.2782 2.1799 9.8788 2.1799 21.0798 L 66 34 c 0 11.2011 0 16.8016 -2.1799 21.0798 a 20.0000 20.0000 0 0 1 -8.7403 8.7403 c -4.2782 2.1799 -9.8788 2.1799 -21.0798 2.1799 L 32 66 c -11.2011 0 -16.8016 0 -21.0798 -2.1799 a 20.0000 20.0000 0 0 1 -8.7403 -8.7403 c -2.1799 -4.2782 -2.1799 -9.8788 -2.1799 -21.0798 L 0 32 c 0 -11.2011 0 -16.8016 2.1799 -21.0798 a 20.0000 20.0000 0 0 1 8.7403 -8.7403 c 4.2782 -2.1799 9.8788 -2.1799 21.0798 -2.1799 Z" fill="#0B0B14"/>
+      <ellipse cx="16.5" cy="64" rx="31.5" ry="28" fill="url(#dp-p0)" style="mix-blend-mode:color"/>
+      <ellipse cx="66" cy="24.5" rx="40" ry="41.5" fill="url(#dp-p1)" style="mix-blend-mode:saturation"/>
+      <rect x="0" y="58" width="66" height="8" fill="url(#dp-g)" style="mix-blend-mode:color"/>
+      </g>
+      <defs>
+      <radialGradient id="dp-p0" cx="0" cy="0" r="1" gradientTransform="matrix(36 -8.88889 10 32 12 72.8889)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF9860"/><stop offset="1" stop-color="#FF9860" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="dp-p1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(66 24.5) scale(40 41.5)">
+      <stop stop-color="#9CCBFF"/><stop offset="1" stop-color="#9CCBFF" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="dp-g" x1="0" y1="66" x2="0" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFB288" stop-opacity="1"/><stop offset="1" stop-color="#FFB288" stop-opacity="0"/>
+      </linearGradient>
+      <clipPath id="dp-c"><path d="M 34 0 c 11.2011 0 16.8016 0 21.0798 2.1799 a 20.0000 20.0000 0 0 1 8.7403 8.7403 c 2.1799 4.2782 2.1799 9.8788 2.1799 21.0798 L 66 34 c 0 11.2011 0 16.8016 -2.1799 21.0798 a 20.0000 20.0000 0 0 1 -8.7403 8.7403 c -4.2782 2.1799 -9.8788 2.1799 -21.0798 2.1799 L 32 66 c -11.2011 0 -16.8016 0 -21.0798 -2.1799 a 20.0000 20.0000 0 0 1 -8.7403 -8.7403 c -2.1799 -4.2782 -2.1799 -9.8788 -2.1799 -21.0798 L 0 32 c 0 -11.2011 0 -16.8016 2.1799 -21.0798 a 20.0000 20.0000 0 0 1 8.7403 -8.7403 c 4.2782 -2.1799 9.8788 -2.1799 21.0798 -2.1799 Z"/></clipPath>
+      </defs>
+      </svg>
+      <svg class="mark" viewBox="0 0 66 66" aria-hidden="true">
+        <ellipse class="ln" cx="13.9815" cy="32.9999" rx="2.98148" ry="6.22596"/>
+        <ellipse class="ln" cx="22.7913" cy="33.0002" rx="3.63317" ry="11.3464"/>
+        <ellipse class="ln" cx="32.9069" cy="32.9998" rx="4.28718" ry="13.8368"/>
+        <ellipse class="ln" cx="43.1155" cy="33.0" rx="3.72626" ry="9.68456"/>
+        <ellipse class="ln" cx="52.0185" cy="32.9999" rx="2.98148" ry="6.22596"/>
+      </svg>
+    </div>
     <h1 id="heroName">Leise</h1>
     <p class="sub">Voice to text, anywhere you type.</p>
     <button class="btn btn-wide" id="btnWelcome">Continue</button>
@@ -132,6 +257,8 @@
         <span class="state-wait" id="micState">Checking…</span>
         <button class="btn" id="micBtn" style="display:none">Grant</button>
       </div>
+    </div>
+    <div class="group">
       <div class="row">
         <span class="nm">Accessibility</span>
         <span class="state-wait" id="accState">Checking…</span>
@@ -179,9 +306,13 @@
   <!-- 5 · Try it -->
   <div class="screen" id="s-try">
     <h1>Try it</h1>
-    <p class="sub">Click into the box, press <kbd id="tryKbd">⌃ Space</kbd>, and say something. Stop with the same keys, or <kbd>Enter</kbd>.</p>
+    <p class="sub">Say something out loud. It lands in the box.</p>
+    <div class="press">
+      <div class="caps" id="tryCaps" aria-hidden="true"></div>
+      <span class="press-note" id="tryNote">Press to start. Press again, or <kbd>Enter</kbd>, to stop.</span>
+    </div>
     <textarea id="tryBox" placeholder="Your words land here, and later wherever your cursor is."></textarea>
-    <p class="help" style="margin-top:6px">That is the whole app.</p>
+    <p class="help" id="tryHelp" style="margin-top:6px">That is the whole app.</p>
     <button class="btn btn-wide" id="btnDone">Get Started</button>
     <div class="dots"><i></i><i></i><i></i><i></i><i class="on"></i></div>
   </div>
@@ -217,8 +348,57 @@
     function show(id) {
       screens.forEach((s) => document.getElementById(s).classList.toggle('visible', s === id));
       if (id !== 's-perms' && permPoll) { clearInterval(permPoll); permPoll = null; }
+      setMarkMotion(id === 's-welcome');
       requestAnimationFrame(() => { reportHeight(); setTimeout(reportHeight, 200); });
     }
+
+    // --- The mark, breathing ---
+    // Five lenses scaling on their own phase, from three incommensurate sines
+    // so the loop never visibly repeats. Idle only: the renderer is never told
+    // about recording state, so there is nothing else to reflect here.
+    const lenses = [...document.querySelectorAll('.hero-mark .ln')];
+    const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let markRAF = null;
+    const welcomeEl = () => document.getElementById('s-welcome');
+    function breathe(now) {
+      // Self-terminating: the loop is tied to what is on screen, not to who
+      // started it, so any path that changes screens stops it — including
+      // main.js's capture harness, which toggles the class directly.
+      // Tied to what is on screen rather than to who started it, so any path
+      // that changes screens stops it — including main.js's capture harness,
+      // which toggles the class directly.
+      if (!welcomeEl().classList.contains('visible')) { markRAF = null; restMark(); return; }
+      const t = now / 1000;
+      for (let i = 0; i < lenses.length; i++) {
+        const bias = 1 - Math.abs(i - 2) * 0.13;
+        const e = Math.sin(t * 0.55 + i * 1.27) * 0.55 +
+                  Math.sin(t * 0.90 + i * 2.16) * 0.30 +
+                  Math.sin(t * 1.33 + i * 0.76) * 0.15;
+        const s = 0.96 + 0.10 * bias * (e * 0.5 + 0.5);
+        lenses[i].setAttribute('transform',
+          'translate(0 33) scale(1 ' + s.toFixed(4) + ') translate(0 -33)');
+      }
+      markRAF = requestAnimationFrame(breathe);
+    }
+    function restMark() { lenses.forEach((l) => l.removeAttribute('transform')); }
+    function setMarkMotion(on) {
+      // The preference is part of whether it should RUN, not just whether it
+      // may start — otherwise switching Reduce Motion on mid-session leaves an
+      // already-running loop going.
+      const run = on && !calm.matches;
+      if (run && !markRAF) markRAF = requestAnimationFrame(breathe);
+      if (!run) {
+        if (markRAF) { cancelAnimationFrame(markRAF); markRAF = null; }
+        // Settle back to the icon's own geometry, so the mark is never left
+        // frozen at whatever scale the last frame happened to hit.
+        restMark();
+      }
+    }
+    // Welcome is the screen a first-run user lingers on, so honour a mid-session
+    // change to Reduce Motion instead of sampling the preference once.
+    calm.addEventListener('change', () => {
+      setMarkMotion(document.getElementById('s-welcome').classList.contains('visible'));
+    });
 
     const KEY_GLYPHS = { Control: '⌃', Alt: '⌥', Shift: '⇧', Meta: '⌘', Command: '⌘', CommandOrControl: '⌘' };
     function displayShortcut(acc) {
@@ -336,6 +516,7 @@
     });
     document.getElementById('btnDone').addEventListener('click', () => api.completeOnboarding());
     document.getElementById('openSettings').addEventListener('click', () => api.openSettingsWindow());
+    document.getElementById('btnClose').addEventListener('click', () => api.closeOnboarding());
 
     // --- Init ---
     document.title = api.productName;
@@ -346,7 +527,14 @@
     api.getConfig().then((cfg) => {
       config = cfg || {};
       provider = config.transcriptionProvider || 'groq';
-      document.getElementById('tryKbd').textContent = displayShortcut(config.shortcut);
+      const caps = document.getElementById('tryCaps');
+      caps.innerHTML = '';
+      displayShortcut(config.shortcut).split(' ').forEach((k) => {
+        const el = document.createElement('span');
+        el.className = 'cap';
+        el.textContent = k;
+        caps.appendChild(el);
+      });
       document.getElementById('kKbd').textContent = displayShortcut(config.shortcut);
       document.getElementById('gKbd').textContent = displayShortcut(config.shortcut);
       const p = PROVIDERS[provider];

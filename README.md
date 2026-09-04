@@ -39,6 +39,16 @@ The first run walks you through permissions and your key, and ends with a test d
 
 To build a standalone app: `npm run build`, then install from `dist/`.
 
+### Demo mode
+
+`npm run demo` runs the app as a first launch every time: it uses its own
+throwaway config, so onboarding always starts from the top. Permissions are
+assumed granted and any API key is accepted, so nothing blocks the walkthrough.
+It binds a different record shortcut so it can run alongside an installed copy,
+and it reuses the installed app's key for real transcription unless you set
+`LEISE_DEMO_KEY`. `npm run demo:light` and `npm run demo:dark` start in a fixed
+appearance; ⌃⌥L cycles it while running.
+
 ## Permissions
 
 - **Microphone** — recording

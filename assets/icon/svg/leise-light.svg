@@ -1,8 +1,5 @@
 <svg width="66" height="66" viewBox="0 0 66 66" fill="none" xmlns="http://www.w3.org/2000/svg">
-<!-- The Leise app icon. build/icon.png is composed from
-     assets/icon/leise-light-1024.png by scripts/make-app-icon.py; this file is
-     the vector master and the two must be kept in step.
-     No SVG <filter>: filterUnits="userSpaceOnUse" pins the filter region to 66
+<!-- No SVG <filter>: filterUnits="userSpaceOnUse" pins the filter region to 66
      user units, so the renderer rasterises at icon size and upscales, which
      shows as rough corners and a hard seam. The inner glow is a clipped
      gradient band instead, so the whole tile stays vector at any size. -->

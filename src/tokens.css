@@ -1,4 +1,4 @@
-/* Whisp UI tokens — one source of truth for every window.
+/* Leise UI tokens — one source of truth for every window.
    Light is the base; dark overrides via system appearance. */
 :root {
   --ground: #F2F2F7;
@@ -17,11 +17,25 @@
   --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.10), 0 4px 14px rgba(0, 0, 0, 0.12);
   --glass-ink: #1D1D1F;
 
+  /* Group surfaces sit on glass over the window ground rather than on an
+     opaque --surface. */
+  --glass-surface: rgba(255, 255, 255, 0.62);
+  --glass-highlight: rgba(255, 255, 255, 0.45);
+
+  /* Primary action is neutral: ink on light, light on dark. Blue stays the
+     secondary accent (links, focus rings, validation). */
+  --action: #1D1D1F;
+  --on-action: #FFFFFF;
+
+  /* Icon-intrinsic: the app tile's lens fill. Changes only with the icon. */
+  --mark-ink: #0E0E12;
+
   --red: #FF3B30;
   --orange: #FF9500;
   --green: #34C759;
   --blue: #007AFF;
 
+  --light-off: #DDDDE0;
   --seg-track: rgba(120, 120, 128, 0.16);
   --seg-thumb: #FFFFFF;
   --control-bg: rgba(120, 120, 128, 0.12);
@@ -40,8 +54,20 @@
   --space-32: 32px;
   --space-40: 40px;
 
-  --radius-group: 10px;
-  --radius-control: 6px;
+  /* Radius scale, from the Leise Figma variable collection (Tokens).
+     The glass pass widened these; the old 10/6 pair predates it. */
+  /* The window's own corner, from the Intro frames in Figma (r20). */
+  --radius-window: 20px;
+  --radius-group: 20px;
+  --radius-control: 12px;
+  --radius-button-wide: 16px;
+  --radius-seg-track: 14px;
+  --radius-seg-thumb: 12px;
+  --radius-kbd: 5px;
+  --radius-capsule: 21px;
+  --radius-msg: 19px;
+
+  --size-row: 42px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -57,8 +83,19 @@
     --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.35);
     --glass-ink: #F2F2F4;
 
+    /* Figma says 0.08. Lowered so --secondary clears AA on the card: 0.08
+       measured 4.33:1, 0.06 measures 4.66:1, and the card stays distinct. */
+    --glass-surface: rgba(255, 255, 255, 0.06);
+    --glass-highlight: rgba(255, 255, 255, 0.10);
+
+    --action: #F2F2F4;
+    --on-action: #1D1D1F;
+
+    --mark-ink: #FFFFFF;
+
     --blue: #409CFF;
 
+    --light-off: #4A4A4E;
     --seg-track: rgba(118, 118, 128, 0.24);
     --seg-thumb: #636368;
     --control-bg: rgba(118, 118, 128, 0.24);
