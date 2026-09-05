@@ -1598,6 +1598,10 @@ ipcMain.on('pointer-size', (event, width, height) => {
   win.webContents.send('pointer-caret', place.caret);
   // showInactive: the reminder must never take focus from what the user is typing in.
   win.showInactive();
+  // A panel in the corner of a big display is easy to miss. Purr is short and
+  // soft, and distinct from Pop (start), Tink (stop) and Basso (error).
+  // playSound already honours the Sounds toggle.
+  playSound('Purr');
 });
 
 ipcMain.on('close-onboarding', () => {

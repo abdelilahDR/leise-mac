@@ -52,7 +52,7 @@
       left: var(--caret-x, 50%);
       transform: translateX(-7px);
       width: 14px; height: var(--caret-h);
-      color: var(--glass-bg);
+      color: var(--surface);
     }
 
     .card {
@@ -62,16 +62,20 @@
       align-items: center;
       gap: var(--space-12);
       padding: var(--space-12) var(--space-16);
-      background: var(--glass-bg);
-      border: 0.5px solid var(--glass-border);
+      /* Opaque, not glass: this lands over whatever the user happens to be
+         looking at, and the translucent surface was hard to read. Same
+         surface + hairline pairing the settings groups use; the shadow stays
+         because it floats. */
+      background: var(--surface);
+      border: 0.5px solid var(--hairline);
       border-radius: var(--radius-group);
       box-shadow: var(--glass-shadow);
-      color: var(--glass-ink);
+      color: var(--ink);
     }
 
     /* The menu bar glyph is the middle three lenses, so that is what the
        reminder shows. scripts/make-tray-icons.py draws the same three. */
-    .mark { width: 22px; height: 22px; flex: none; fill: var(--glass-ink); }
+    .mark { width: 22px; height: 22px; flex: none; fill: var(--ink); }
 
     .copy { display: flex; flex-direction: column; gap: var(--space-4); }
     .title { font-size: 13px; font-weight: 600; white-space: nowrap; }
@@ -92,7 +96,7 @@
       <path d="M7 0.5L13.5 7.5H0.5z" fill="currentColor"/>
       <!-- Only the two slanted sides, so the card's outline carries through
            the caret instead of being drawn straight across its base. -->
-      <path d="M0.5 7.5L7 0.5L13.5 7.5" fill="none" stroke="var(--glass-border)" stroke-width="0.5"/>
+      <path d="M0.5 7.5L7 0.5L13.5 7.5" fill="none" stroke="var(--hairline)" stroke-width="0.5"/>
     </svg>
     <div class="card">
       <!-- The same three lenses at the same SPREAD 1.14 as the tray glyph,
