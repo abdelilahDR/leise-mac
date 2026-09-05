@@ -108,6 +108,21 @@ if (process.env.LEISE_AUTOSTOP_TEST) {
 if (process.env.LEISE_MENUBAR_TEST) {
   app.setPath('userData', path.join(app.getPath('temp'), 'leise-menubar-test-' + process.pid));
 }
+// Steady-state probe: an onboarded install with a working key, which is the
+// launch every returning user gets. Seeded before configPath is derived.
+if (process.env.LEISE_STEADY_TEST) {
+  const dir = path.join(app.getPath('temp'), 'leise-steady-test-' + process.pid);
+  app.setPath('userData', dir);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({
+      onboardingComplete: true, transcriptionProvider: 'groq', groqApiKey: 'probe-key',
+      shortcut: 'Control+Space',
+    }));
+  } catch (e) {
+    console.error('[steady-test] seed failed:', e);
+  }
+}
 if (process.env.LEISE_RETRY_TEST) {
   app.setPath('userData', path.join(app.getPath('temp'), 'leise-retry-test-' + process.pid));
 }
@@ -652,7 +667,12 @@ function createOverlayWindow() {
   overlayWindow.once('ready-to-show', () => {
     if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive();
   });
-  overlayWindow.setVisibleOnAllWorkspaces(true);
+  // skipTransformProcessType: without it Electron flips the process between
+  // UIElementApplication and ForegroundApplication to put the window on every
+  // space, which lands Leise in the Dock the first time you record and never
+  // takes it back out. We are already a UIElement, so the transform is not
+  // needed. Electron 28 electron.d.ts documents this.
+  overlayWindow.setVisibleOnAllWorkspaces(true, { skipTransformProcessType: true });
 
   // Save position when user moves the overlay
   overlayWindow.on('moved', () => {
@@ -828,7 +848,7 @@ function showTrayPointer() {
     },
   });
 
-  pointerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  pointerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
   pointerWindow.loadFile(path.join(__dirname, 'pointer.html'), {
     query: { keys: displayShortcut(config.shortcut) },
   });
@@ -1726,6 +1746,14 @@ app.whenReady().then(() => {
     createSettingsWindow();
     app.focus({ steal: true });
     restoreAccessory(settingsWindow);
+  } else {
+    // The steady-state launch: no onboarding, no settings, no Dock icon, so
+    // nothing at all appears and the double click reads as a failure to
+    // start. Not when macOS opened us at login, where nobody asked for it.
+    // The delay lets the tray settle so getBounds reports the real glyph.
+    const openedAtLogin = process.platform === 'darwin' &&
+      app.getLoginItemSettings().wasOpenedAtLogin;
+    if (!openedAtLogin) setTimeout(showTrayPointer, 600);
   }
 
   if (DEMO) {
@@ -1769,6 +1797,7 @@ app.whenReady().then(() => {
   // schedules, and a relaunched test child must not relaunch again.
   const suppressRelaunch = process.env.WHISP_UITEST || process.env.LEISE_FOCUS_TEST ||
     process.env.LEISE_ONBOARD_TEST || process.env.LEISE_AUTOSTOP_TEST || process.env.LEISE_MENUBAR_TEST ||
+    process.env.LEISE_STEADY_TEST ||
     process.env.LEISE_RETRY_TEST || process.env.LEISE_CLEANUP_TEST || process.env.LEISE_CLEANUP_LIVE ||
     process.env.LEISE_FRESH || DEMO || process.argv.includes('--leise-relaunch-child');
   if (!suppressRelaunch) {
@@ -1832,6 +1861,37 @@ if (process.env.LEISE_FOCUS_TEST) {
   });
 }
 
+// Steady-state probe (LEISE_STEADY_TEST=1): the launch a returning user gets.
+// Nothing should ever put Leise in the Dock here — not the launch, not the
+// pointer, and not recording, which is where it turned up in the wild.
+// Meaningful only in a packaged build: an unpackaged Electron has no
+// LSUIElement of its own and always carries a Dock tile.
+if (process.env.LEISE_STEADY_TEST) {
+  app.whenReady().then(async () => {
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+    const say = (label, ok) => console.log(`[steady-test] ${ok ? 'PASS' : 'FAIL'} ${label}`);
+    const docked = () => app.dock.isVisible();
+
+    await tick(600);
+    say('launch leaves the Dock alone', !docked());
+
+    await tick(1400); // the launch pointer is on a 600ms delay
+    say('pointer showed', !!(pointerWindow && !pointerWindow.isDestroyed() && pointerWindow.isVisible()));
+    say('pointer did not put us in the Dock', !docked());
+
+    // The real shortcut path, which is what the user pressed.
+    toggleRecording();
+    await tick(1500);
+    say('recording did not put us in the Dock', !docked());
+
+    toggleRecording(); // stop; transcription will fail on the probe key
+    await tick(2500);
+    say('stopping did not put us in the Dock', !docked());
+
+    app.quit();
+  });
+}
+
 // Menu bar probe (LEISE_MENUBAR_TEST=1): first launch shows the Dock icon on purpose,
 // so onboarding cannot be missed. This checks it goes away again when that
 // window closes — whether the user pressed Done or just closed it, which used
@@ -1859,13 +1919,16 @@ if (process.env.LEISE_MENUBAR_TEST) {
     say('a later window does not bring it back', !app.dock.isVisible());
 
     // The pointer that replaces the Dock icon as the way back to the app.
-    const focusedBefore = BrowserWindow.getFocusedWindow();
     showTrayPointer();
     await tick(1400);
     const up = !!(pointerWindow && !pointerWindow.isDestroyed() && pointerWindow.isVisible());
     say('pointer opens', up);
-    say('pointer takes no focus', up && !pointerWindow.isFocused() &&
-      BrowserWindow.getFocusedWindow() === focusedBefore);
+    // The invariant is that the panel never takes keyboard focus. Comparing
+    // against whichever window held focus beforehand is flaky: this is a
+    // UIElement app, so getFocusedWindow legitimately returns null when we
+    // are not active, and restoreAccessory's hide-then-focus settles async.
+    say('pointer takes no focus',
+      up && !pointerWindow.isFocused() && BrowserWindow.getFocusedWindow() !== pointerWindow);
 
     if (up) {
       const b = pointerWindow.getBounds();
